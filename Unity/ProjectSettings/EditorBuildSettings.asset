@@ -4,6 +4,12 @@
 EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
-  m_Scenes: []
+  m_Scenes:
+  - enabled: 1
+    path: Assets/Apps/Transcription/Transcription.unity
+    guid: 38132d1658cc8487eb5dbc592ec88f46
   m_configObjects:
+    Unity.XR.Oculus.Settings: {fileID: 11400000, guid: 05e02b117e006e043a68178c603bd3db, type: 2}
     com.unity.xr.management.loader_settings: {fileID: 11400000, guid: c082a6e06a04344d899eb5102c1f8fd3, type: 2}
+    com.unity.xr.openxr.settings4: {fileID: 11400000, guid: 2bf311cdb2192924abe5bdd00ad79fbc, type: 2}
+  m_UseUCBPForAssetBundles: 0
