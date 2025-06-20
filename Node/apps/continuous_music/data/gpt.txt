@@ -1,3 +1,2 @@
-[sad rain]
-[soft piano]
-{70}
+[happy soft piano]
+{60}

@@ -9,15 +9,21 @@ import { MessageReader } from '../../components/message_reader';
 import path from 'path';
 import { RTCAudioData } from '@roamhq/wrtc/types/nonstandard';
 import { fileURLToPath } from 'url';
+import { AudioRecorder } from '../../services/audio_recorder/service';
+
+import fs from 'fs';
+
 
 export class ContinuousMusicAgent extends ApplicationController {
     components: {
         mediaReceiver?: MediaReceiver;
         speech2text?: SpeechToTextService;
-        //artGenerationService?: ArtGenerationService;
+        audioRecorder?: AudioRecorder;
+        // artGenerationService?: ArtGenerationService;
         // artReceiver?: MessageReader;
         // artInterpretation?: ArtInterpretationService;
         musicGenerationService?: ContinuousMusicGenerationService;
+        writer?: fs.WriteStream;
     } = {};
     
     //byteArray?: any;
@@ -53,6 +59,12 @@ export class ContinuousMusicAgent extends ApplicationController {
         //this.components.artGenerationService = new ArtGenerationService(this.scene);
         this.components.musicGenerationService = new ContinuousMusicGenerationService(this.scene);
 
+        // An AudioRecorder to record audio data from peers
+        this.components.audioRecorder = new AudioRecorder(this.scene);
+
+        // File path based on peer UUID and timestamp
+        const timestamp = new Date().toISOString().replace(/:/g, '-');
+
         this.currentSpeech = "";
 
     }
@@ -66,6 +78,7 @@ export class ContinuousMusicAgent extends ApplicationController {
             // Send the audio data to the transcription service and the audio recording service
             if (this.roomClient.peers.get(uuid) !== undefined) {
                 this.components.speech2text?.sendToChildProcess(uuid, sampleBuffer);
+                this.components.audioRecorder?.sendToChildProcess(uuid, sampleBuffer);
             }
         });
         
@@ -80,11 +93,17 @@ export class ContinuousMusicAgent extends ApplicationController {
             if (response.length != 0 && response.length > threshold) {
                 // Remove all newlines from the response
                 response = response.replace(/(\r\n|\n|\r)/gm, '');
-                console.log("Step 2 -> retrieve from speech to text...not used here");
-                console.log(response);
+                // console.log("Step 2 -> retrieve from speech to text...not used here");
+                // console.log(response);
                 if (response.startsWith('>')) {
                     response = response.slice(1); // Slice off the leading '>' character
                     this.currentSpeech = response;
+
+                    const ts = new Date().toISOString().replace(/:/g, '-');     // 与 Transcription 脚本同格式
+                    const display = peerName || identifier;                      // 有昵称用昵称，没有就用 UUID
+                    console.log(`[${ts}] ${display}: ${response}`);
+                    // this.log(`[${ts}] ${display}: ${response}`, 'info', '');
+
                     /*if (response.trim()) {
                         const message = (peerName + ' -> Agent:: ' + response).trim();
                         this.log(message);
@@ -94,6 +113,8 @@ export class ContinuousMusicAgent extends ApplicationController {
                 }
             }
         });
+
+        
 
         // // STEP 1 this service receive the image and send to LLM 
         // this.components.artReceiver?.on('data', (data: any) => {
@@ -161,7 +182,7 @@ export class ContinuousMusicAgent extends ApplicationController {
                 return;
             }
 
-            this.scene.send(new NetworkId(95), {
+            this.scene.send(new NetworkId(99), {
                 type: 'AudioInfo',
                 targetPeer: "Music Service",
                 audioLength: data.length,
@@ -169,7 +190,7 @@ export class ContinuousMusicAgent extends ApplicationController {
             
             while (response.length > 0) {
                 //console.log('Response length: ' + response.length + ' bytes');
-                this.scene.send(new NetworkId(95), response.slice(0, 16000));
+                this.scene.send(new NetworkId(99), response.slice(0, 16000));
                 response = response.slice(16000);
             }
         });

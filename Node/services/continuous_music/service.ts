@@ -16,14 +16,24 @@ class ContinuousMusicGenerationService extends ServiceController {
 
         this.roomClient.addListener('OnPeerAdded', (peer: any) => {
             if (!('default' in this.childProcesses)) {
-                this.registerChildProcess('default', 'cmd.exe', [
-                    '/c', // Run a command in cmd
-                    'conda', 'activate', 'rgs', '&&', // Activate the 'rgs' environment
-                    'python', '-u',
-                    '../../services/continuous_music/text2music_continuous_wd.py',
-                    '--prompt_postfix',
-                    nconf.get('promptFromSystem') || '',
-                ]);
+                // this.registerChildProcess('default', 'cmd.exe', [
+                //     '/c', // Run a command in cmd
+                //     'conda', 'activate', 'rgs', '&&', // Activate the 'rgs' environment
+                //     'python', '-u',
+                //     '../../services/continuous_music/text2music_continuous_wd.py',
+                //     '--prompt_postfix',
+                //     nconf.get('promptFromSystem') || '',
+                // ]);
+                this.registerChildProcess(
+                    'default',
+                    'conda',
+                    [
+                        'run', '-n', 'rgs',
+                        'python', '-u',
+                        '../../services/continuous_music/text2music_continuous_wd.py',
+                        '--prompt_postfix', nconf.get('promptFromSystem') || ''
+                    ]
+                );
             }
         });
         
