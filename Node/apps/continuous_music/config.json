@@ -24,5 +24,7 @@
       "uri": "stun:stun.l.google.com:19302"
     }
   ],
+  "preprompt": "You are a music-prompt extractor. Given a user's sentence, return exactly ONE line in the format [adjective mood instrument] {volume}. Output nothing else—no quotes, no extra words.",
+  "prompt_suffix": "",
   "configurationComplete": true
 }

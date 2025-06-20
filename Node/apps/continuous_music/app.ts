@@ -10,8 +10,9 @@ import path from 'path';
 import { RTCAudioData } from '@roamhq/wrtc/types/nonstandard';
 import { fileURLToPath } from 'url';
 import { AudioRecorder } from '../../services/audio_recorder/service';
-
+import { TextGenerationService } from '../../services/text_generation/service';
 import fs from 'fs';
+import { dirname } from 'path';
 
 
 export class ContinuousMusicAgent extends ApplicationController {
@@ -23,7 +24,9 @@ export class ContinuousMusicAgent extends ApplicationController {
         // artReceiver?: MessageReader;
         // artInterpretation?: ArtInterpretationService;
         musicGenerationService?: ContinuousMusicGenerationService;
+        textGenerationService?: TextGenerationService;
         writer?: fs.WriteStream;
+        
     } = {};
     
     //byteArray?: any;
@@ -61,6 +64,9 @@ export class ContinuousMusicAgent extends ApplicationController {
 
         // An AudioRecorder to record audio data from peers
         this.components.audioRecorder = new AudioRecorder(this.scene);
+
+        // A TextGenerationService to generate text based on text
+        this.components.textGenerationService = new TextGenerationService(this.scene);
 
         // File path based on peer UUID and timestamp
         const timestamp = new Date().toISOString().replace(/:/g, '-');
@@ -104,6 +110,7 @@ export class ContinuousMusicAgent extends ApplicationController {
                     console.log(`[${ts}] ${display}: ${response}`);
                     // this.log(`[${ts}] ${display}: ${response}`, 'info', '');
 
+                    this.components.textGenerationService?.sendToChildProcess('default', response + '\n');
                     /*if (response.trim()) {
                         const message = (peerName + ' -> Agent:: ' + response).trim();
                         this.log(message);
@@ -170,6 +177,36 @@ export class ContinuousMusicAgent extends ApplicationController {
                     });
             }
         });*/
+
+        // === Listen to ChatGPT output and write to gpt.txt =======================
+        this.components.textGenerationService?.on('data', (buf: Buffer) => {
+            let line = buf.toString().trim();                    // Example:  >Calm emotional piano {60}.
+            line = line.replace(/^>+/, '').replace(/\.+$/, '');  // Remove leading ">" and trailing "."
+
+            // -------- Extract keywords and volume --------------------------
+            const keywordsMatch = line.match(/[a-zA-Z ]+/);      // Match letters and spaces
+            const volumeMatch   = line.match(/\b(\d{1,3})\b/);   // Match number between 0–999
+
+            if (!keywordsMatch) {
+                this.log('Failed to extract keywords: ' + line, 'warning');
+                return;
+            }
+
+            const keywords = keywordsMatch[0].trim().toLowerCase(); // e.g., calm emotional piano
+            const volume   = volumeMatch ? volumeMatch[1] : '60';   // Use default 60 if missing
+
+            // -------- Reformat and write to gpt.txt ------------------------
+            const finalLine = `[${keywords}] {${volume}}`;
+
+            const __dirname = dirname(fileURLToPath(import.meta.url));
+            const gptPath   = path.resolve(__dirname,
+                            '../../apps/continuous_music/data/gpt.txt');
+
+            fs.appendFileSync(gptPath, finalLine + '\n');
+            console.log('◎ Wrote to gpt.txt → ' + finalLine);
+        });
+
+
 
 
         this.components.musicGenerationService?.on('data', (data: Buffer, identifier: string) => {

@@ -1,2 +1,9 @@
-[happy soft piano]
-{60}
+[calm emotional piano] {60}
+[happy guitar] {16}
+[warm piano] {50}
+[heavy aggressive guitar] {60}
+[heavy intense drums] {60}
+[explosive energetic percussion] {60}
+[no music prompt detected] {60}
+[smooth mellow piano] {60}
+[pounding rhythmic drums] {60}
