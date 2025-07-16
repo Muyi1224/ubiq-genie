@@ -8,6 +8,7 @@ import json
 import argparse
 import numpy as np
 import wave
+import threading
 import scipy.signal
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -113,10 +114,37 @@ def generate_music_from_prompt(data, chunk_counter):
     audio_data = np.frombuffer(data, dtype=np.int16)
     volume = np.sqrt(np.mean(np.abs(audio_data ** 2)))
 
+
+
+    # if chunk_counter % 450 == 0:  # 每秒1次能量打印（避免刷屏卡顿）
+    #     sys.stderr.write(f"[Energy] {volume:.1f}\n")
+
     if volume > THRESHOLD:
-        resampled_audio_data = scipy.signal.resample(audio_data* volume_factor, int(len(audio_data) * (48000 / 96000)))
+        # ① 重采样到 48 kHz
+        resampled_audio_data = scipy.signal.resample(audio_data* volume_factor, int(len(audio_data) * (48000 / 96000))).astype(np.int16)
         # TBD
         # sys.stdout.buffer.write(np.int16(resampled_audio_data))
+        # ② 把 numpy 转原始 bytes
+        pcm_bytes = resampled_audio_data.tobytes()
+
+        # ③ 先发一个 JSON 头（一次 clip 发一次即可；此处简单每帧都发）
+        send_audio_header(len(pcm_bytes))
+
+        # ④ 按 16 000 B 切包输出到 stdout，Node 直接读取
+        PACK = 16_000
+        for i in range(0, len(pcm_bytes), PACK):
+            chunk = pcm_bytes[i:i+PACK]
+            sys.stdout.buffer.write(chunk)
+            sys.stdout.buffer.flush()
+
+def send_audio_header(total_bytes: int):
+    hdr = {
+        "type": "AudioInfo",
+        "targetPeer": "Music Service",
+        "audioLength": total_bytes
+    }
+    sys.stdout.write(json.dumps(hdr) + "\n")    # 仍走 stdout（文本）
+    sys.stdout.flush()
 
 
 def recognize_from_file():
@@ -143,14 +171,34 @@ def recognize_from_file():
     finally:
         observer.join()
 
+def listen_from_node():
+    """
+    循环读取 Node 发来的 JSON（每行一条），
+    如果带 objectName / type / value 就自行处理。
+    """
+    for line in sys.stdin:                      # ❶ 阻塞式逐行读取
+        try:
+            msg = json.loads(line)
+            if "objectName" in msg:
+                print(f"[From Node] objectName -> {msg['objectName']}")
+            if msg.get("type") == "SetVolume":
+                set_volume(int(msg.get("value", 80)))
+        except Exception as e:
+            print(f"[From Node] JSON error: {e} / raw: {line!r}")
+
 
 if __name__ == "__main__":
+
+    threading.Thread(target=listen_from_node, daemon=True).start()
+
     parser = argparse.ArgumentParser(description="Text-to-Sound")
     parser.add_argument("--prompt_postfix", type=str, default="", help="Postfix to add to the prompt.")
     args = parser.parse_args()
 
     chrome_options = Options()
     chrome_options.add_experimental_option("debuggerAddress", "127.0.0.1:9222")
+    chrome_options.add_argument("--mute-audio")
+
     # service = Service("D:/Applications/chromedriver-win64/chromedriver.exe")
     chromedriver_path = Path("D:/Google Download/chromedriver-win64/chromedriver-win64/chromedriver.exe")
     service = Service(str(chromedriver_path))
@@ -191,6 +239,7 @@ if __name__ == "__main__":
     wait = WebDriverWait(driver, 30)
     volume_factor = 1.0
     recognize_from_file()
+
 
 #launch this before
 # "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="C:\chromedriver_profile"  --unsafely-disable-devtools-self-xss-warnings &

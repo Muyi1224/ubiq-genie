@@ -3,6 +3,7 @@ using UnityEngine.UI;
 using System.Collections.Generic;
 using Ubiq.Messaging;
 using TMPro;
+using System;
 public class SpawnMenu : MonoBehaviour
 {
     public GameObject buttonPrefab;
@@ -18,11 +19,21 @@ public class SpawnMenu : MonoBehaviour
 
     public List<SpawnableItem> spawnableItems;
 
+    public class SpawnedObjectData
+    {
+        public string name;
+        public Vector3 position;
+        public Vector3 rotation;
+        public Vector3 scale;
+    }
+
+    private NetworkId networkId = new NetworkId(99);
     private NetworkContext context;
 
     void Start()
     {
-        context = NetworkScene.Register(this);
+        //context = NetworkScene.Register(this);
+        context = NetworkScene.Register(this, networkId);
         PopulateMenu();
     }
 
@@ -40,6 +51,7 @@ public class SpawnMenu : MonoBehaviour
             {
                 SpawnObject(prefab);
                 context.SendJson(new SpawnMessage { objectName = objectName });
+                Debug.Log($"send name: {objectName}");
             });
         }
     }
@@ -51,6 +63,20 @@ public class SpawnMenu : MonoBehaviour
             Debug.Log("Instantiating prefab: " + prefab.name);
             var go = Instantiate(prefab);
             go.transform.position = position ?? (Camera.main.transform.position + Camera.main.transform.forward * 1.5f);
+
+            //// 打包参数为 JSON 并发送
+            //var data = new SpawnedObjectData
+            //{
+            //    name = prefab.name,
+            //    position = go.transform.position,
+            //    rotation = go.transform.eulerAngles,
+            //    scale = go.transform.localScale
+            //};
+
+            //string json = JsonUtility.ToJson(data);
+            //// TBD
+            //context.SendJson(json);
+            //Debug.Log("send json");
         }
         else
         {

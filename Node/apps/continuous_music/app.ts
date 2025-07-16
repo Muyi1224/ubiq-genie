@@ -21,7 +21,7 @@ export class ContinuousMusicAgent extends ApplicationController {
         speech2text?: SpeechToTextService;
         audioRecorder?: AudioRecorder;
         // artGenerationService?: ArtGenerationService;
-        // artReceiver?: MessageReader;
+        musicReceiver?: MessageReader;
         // artInterpretation?: ArtInterpretationService;
         musicGenerationService?: ContinuousMusicGenerationService;
         textGenerationService?: TextGenerationService;
@@ -29,7 +29,7 @@ export class ContinuousMusicAgent extends ApplicationController {
         
     } = {};
     
-    //byteArray?: any;
+    byteArray?: any;
     targetPeer: string = '';
     currentSpeech:string = '';
     constructor(configFile: string = 'config.json') {
@@ -57,7 +57,7 @@ export class ContinuousMusicAgent extends ApplicationController {
         this.components.speech2text = new SpeechToTextService(this.scene);
 
         
-        // this.components.artReceiver = new MessageReader(this.scene, 99);
+        this.components.musicReceiver = new MessageReader(this.scene, 99);
         // this.components.artInterpretation = new ArtInterpretationService(this.scene);
         //this.components.artGenerationService = new ArtGenerationService(this.scene);
         this.components.musicGenerationService = new ContinuousMusicGenerationService(this.scene);
@@ -123,14 +123,17 @@ export class ContinuousMusicAgent extends ApplicationController {
 
         
 
-        // // STEP 1 this service receive the image and send to LLM 
-        // this.components.artReceiver?.on('data', (data: any) => {
-        //     console.log("---- Step 1 -> send to create music prompt [...][...][...]");
-        //     const selectionData = JSON.parse(data.message.toString());
-        //     const peerUUID = selectionData.peer;
-        //     //this.byteArray = selectionData.image;
-        //     this.components.artInterpretation?.sendToChildProcess('default', data.message.toString() + '\n'); //@@from here how to deal with image to the service FIRST
-        // });
+        // STEP 1 this service receive the image and send to LLM 
+        this.components.musicReceiver?.on('data', (data: any) => {
+            console.log("---- Step 1 -> send to create music prompt [...][...][...]");
+            const selectionData = JSON.parse(data.message.toString());
+            console.log("Received objectName from Unity:", selectionData.objectName);
+            //const peerUUID = selectionData.peer;
+            //this.byteArray = selectionData.image;
+            //this.components.artInterpretation?.sendToChildProcess('default', data.message.toString() + '\n'); //@@from here how to deal with image to the service FIRST
+            this.components.musicGenerationService?.sendToChildProcess('default', data.message.toString() + '\n');
+        });
+        
         
         // // STEP 2 this service retrieve information about object and functionalities
         // this.components.artInterpretation?.on('data', (data: Buffer, identifier: string) => {
