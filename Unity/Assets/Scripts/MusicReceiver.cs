@@ -36,7 +36,7 @@ public class MusicReceiver : MonoBehaviour
             expectedBytes = info.audioLength;
             receivedBytes = 0;
             hasStartedPlaying = false;
-            Debug.Log($"[MusicRx] expect {expectedBytes} bytes");
+            Debug.Log($"[MusicRx] Expecting {expectedBytes} bytes of audio stream from: {info.targetPeer}");
         }
         else
         {
@@ -46,17 +46,17 @@ public class MusicReceiver : MonoBehaviour
                 injector.InjectPcm(chunk);
                 receivedBytes += chunk.Length;
 
-                Debug.Log($"[MusicRx] chunk {chunk.Length} B  total {receivedBytes}/{expectedBytes}");
+                Debug.Log($"[MusicRx] Injected chunk: {chunk.Length} bytes  (Total: {receivedBytes}/{expectedBytes})");
 
                 if (!hasStartedPlaying && receivedBytes > 0)
                 {
-                    Debug.Log($"[MusicRx] is playing music£¡");
+                    Debug.Log($"[MusicRx] Started playing received audio stream");
                     hasStartedPlaying = true;
                 }
 
                 if (receivedBytes >= expectedBytes)
                 {
-                    Debug.Log($"[MusicRx] done injecting {receivedBytes} bytes");
+                    Debug.Log($"[MusicRx] Finished injecting total {receivedBytes} bytes");
                     expectedBytes = 0;
                 }
             }

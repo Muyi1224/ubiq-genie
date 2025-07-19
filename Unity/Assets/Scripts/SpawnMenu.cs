@@ -4,6 +4,9 @@ using System.Collections.Generic;
 using Ubiq.Messaging;
 using TMPro;
 using System;
+using UnityEngine.XR.Interaction.Toolkit.Interactables;
+using Unity.VisualScripting;
+using UnityEditor;
 public class SpawnMenu : MonoBehaviour
 {
     public GameObject buttonPrefab;
@@ -27,6 +30,15 @@ public class SpawnMenu : MonoBehaviour
         public Vector3 scale;
     }
 
+    public struct SpawnMessage
+    {
+        public string objectName;
+        public string description;
+        public Vector3 position;
+        public Vector3 scale;
+        public Vector3 rotation;
+    }
+
     private NetworkId networkId = new NetworkId(99);
     private NetworkContext context;
 
@@ -46,17 +58,74 @@ public class SpawnMenu : MonoBehaviour
 
             var prefab = item.prefab;
             var objectName = item.name;
+            var description = item.description;
 
             buttonGO.GetComponent<Button>().onClick.AddListener(() =>
             {
-                SpawnObject(prefab);
-                context.SendJson(new SpawnMessage { objectName = objectName });
-                Debug.Log($"send name: {objectName}");
+                var go = SpawnObject(prefab, objectName, description);
+                var msg = new SpawnMessage
+                {
+                    objectName = objectName,
+                    description = description,
+                    position = go.transform.position,
+                    rotation = go.transform.eulerAngles,
+                    scale = go.transform.localScale
+
+                };
+                //context.SendJson(msg);
+                //Debug.Log($"[SpawnMenu] Sent - Name: {msg.objectName}, Pos: {msg.position}, Scale: {msg.scale}");
+
             });
         }
     }
 
-    void SpawnObject(GameObject prefab, Vector3? position = null)
+    //GameObject SpawnObject(GameObject prefab, string objectName, string description, Vector3? position = null)
+    //{
+    //    if (prefab)
+    //    {
+    //        Debug.Log("Instantiating prefab: " + prefab.name);
+    //        var go = Instantiate(prefab);
+    //        go.transform.position = position ?? (Camera.main.transform.position + Camera.main.transform.forward * 1.5f);
+
+    //        // 检查并添加 XRGrabInteractable 组件
+    //        if (go.GetComponent<XRGrabInteractable>() == null)
+    //        {
+    //            go.AddComponent<XRGrabInteractable>();
+    //        }
+
+    //        // 检查并添加 DeleteOnButton 组件
+    //        if (go.GetComponent<DeleteOnButton>() == null)
+    //        {
+    //            go.AddComponent<DeleteOnButton>();
+    //        }
+
+    //        // 添加并配置 Rigidbody
+    //        var rb = go.GetComponent<Rigidbody>();
+    //        if (rb == null)
+    //        {
+    //            rb = go.AddComponent<Rigidbody>();
+    //        }
+    //        rb.useGravity = false;
+    //        rb.isKinematic = true; // 让它不会被物理系统影响（比如掉下来）
+
+    //        if (go.GetComponent<SyncTransformOnChange>() == null)
+    //        {
+    //            var sync = go.AddComponent<SyncTransformOnChange>();
+    //            sync.objectName = objectName;  // 把名字传进去
+    //            sync.description = description;
+    //            sync.context = context;        // 传递 NetworkContext
+    //        }
+
+    //        return go;
+    //    }
+    //    else
+    //    {
+    //        Debug.LogError("Prefab is null.");
+    //        return null;
+    //    }
+    //}
+
+    GameObject SpawnObject(GameObject prefab, string objectName, string description, Vector3? position = null)
     {
         if (prefab)
         {
@@ -64,23 +133,42 @@ public class SpawnMenu : MonoBehaviour
             var go = Instantiate(prefab);
             go.transform.position = position ?? (Camera.main.transform.position + Camera.main.transform.forward * 1.5f);
 
-            //// 打包参数为 JSON 并发送
-            //var data = new SpawnedObjectData
-            //{
-            //    name = prefab.name,
-            //    position = go.transform.position,
-            //    rotation = go.transform.eulerAngles,
-            //    scale = go.transform.localScale
-            //};
+            if (go.GetComponent<XRGrabInteractable>() == null)
+            {
+                go.AddComponent<XRGrabInteractable>();
+            }
 
-            //string json = JsonUtility.ToJson(data);
-            //// TBD
-            //context.SendJson(json);
-            //Debug.Log("send json");
+            if (go.GetComponent<DeleteOnButton>() == null)
+            {
+                go.AddComponent<DeleteOnButton>();
+            }
+
+            var rb = go.GetComponent<Rigidbody>();
+            if (rb == null)
+            {
+                rb = go.AddComponent<Rigidbody>();
+            }
+            rb.useGravity = false;
+            rb.isKinematic = true;
+
+            SyncTransformOnChange sync = go.GetComponent<SyncTransformOnChange>();
+            if (sync == null)
+            {
+                sync = go.AddComponent<SyncTransformOnChange>();
+            }
+            sync.objectName = objectName;
+            sync.description = description;
+            sync.context = context; // 传递 NetworkContext
+
+            // ★ 新增：放置完成后立刻尝试同步一次（如果与默认缓存不同）
+            sync.SyncIfChanged();
+
+            return go;
         }
         else
         {
             Debug.LogError("Prefab is null.");
+            return null;
         }
     }
 
@@ -90,7 +178,7 @@ public class SpawnMenu : MonoBehaviour
         var item = spawnableItems.Find(i => i.name == msg.objectName);
         if (item != null)
         {
-            SpawnObject(item.prefab);
+            SpawnObject(item.prefab, item.name, item.description);
         }
         else
         {
@@ -104,7 +192,7 @@ public class SpawnMenu : MonoBehaviour
         var item = spawnableItems.Find(i => i.name.ToLower() == name.ToLower());
         if (item != null)
         {
-            SpawnObject(item.prefab, position);
+            SpawnObject(item.prefab, item.name, item.description);
             context.SendJson(new SpawnMessage { objectName = item.name });
         }
         else
@@ -113,8 +201,5 @@ public class SpawnMenu : MonoBehaviour
         }
     }
 
-    struct SpawnMessage
-    {
-        public string objectName;
-    }
+  
 }

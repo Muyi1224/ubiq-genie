@@ -22,6 +22,7 @@ export class ContinuousMusicAgent extends ApplicationController {
         audioRecorder?: AudioRecorder;
         // artGenerationService?: ArtGenerationService;
         musicReceiver?: MessageReader;
+        transformUpdateReceiver?: MessageReader;
         // artInterpretation?: ArtInterpretationService;
         musicGenerationService?: ContinuousMusicGenerationService;
         textGenerationService?: TextGenerationService;
@@ -58,6 +59,7 @@ export class ContinuousMusicAgent extends ApplicationController {
 
         
         this.components.musicReceiver = new MessageReader(this.scene, 99);
+        this.components.transformUpdateReceiver = new MessageReader(this.scene, 100);
         // this.components.artInterpretation = new ArtInterpretationService(this.scene);
         //this.components.artGenerationService = new ArtGenerationService(this.scene);
         this.components.musicGenerationService = new ContinuousMusicGenerationService(this.scene);
@@ -128,13 +130,23 @@ export class ContinuousMusicAgent extends ApplicationController {
             console.log("---- Step 1 -> send to create music prompt [...][...][...]");
             const selectionData = JSON.parse(data.message.toString());
             console.log("Received objectName from Unity:", selectionData.objectName);
+            console.log("Received scale from Unity:", selectionData.position);
+            console.log("Received description from Unity:", selectionData.description);
             //const peerUUID = selectionData.peer;
             //this.byteArray = selectionData.image;
             //this.components.artInterpretation?.sendToChildProcess('default', data.message.toString() + '\n'); //@@from here how to deal with image to the service FIRST
             this.components.musicGenerationService?.sendToChildProcess('default', data.message.toString() + '\n');
         });
         
-        
+
+        this.components.transformUpdateReceiver?.on('data', (data: any) => {
+            const parsed = JSON.parse(data.message.toString());
+            console.log("[Transform Update] object:", parsed.objectName);
+            console.log("  - position:", parsed.position);
+            console.log("  - rotation:", parsed.rotation);
+            console.log("  - scale:", parsed.scale);
+        });
+                
         // // STEP 2 this service retrieve information about object and functionalities
         // this.components.artInterpretation?.on('data', (data: Buffer, identifier: string) => {
         //     const response = data.toString();
