@@ -1,15 +1,2 @@
-[calm emotional piano] {60}
-[happy guitar] {16}
-[warm piano] {50}
-[pipa]
-[soft calming piano] {60}
-[upbeat joyful guitar] {60}[soft calm piano] {60}
-[joyful relaxed guitar] {60}
-[tranquil dreamy flute] {60}
-[smooth soothing saxophone] {60}
-[repetitive annoying triangle] {60}
-[cheerful mellow ukulele] {60}
-[peaceful gentle piano] {60}
-[repetitive upbeat drums] {60}
-[soothing relaxed piano] {60}
-[gentle dreamy guitar] {60}
+[calm]
+[happy]

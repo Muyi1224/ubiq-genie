@@ -20,6 +20,7 @@ from selenium.webdriver.support import expected_conditions as EC
 import re
 
 from pathlib import Path
+import time
 
 # File to watch
 # FILE_PATH = os.path.abspath("../../apps/continuous_music/data/gpt.txt")
@@ -44,9 +45,18 @@ class FileWatcher(FileSystemEventHandler):
         self.callback_prompts = callback_prompts
         self.callback_volume = callback_volume
 
+        self._last_ts = 0.0
+        self._last_content = ""
+
     def on_modified(self, event):
         if event.src_path == FILE_PATH:
-            self.process_file()
+            if event.src_path == FILE_PATH:
+                now = time.time()
+                # 如果距离上次处理不到 0.5 秒，就忽略
+                if now - self._last_ts < 0.5:
+                    return
+                self._last_ts = now
+                self.process_file()
 
     def process_file(self):
         try:
@@ -66,6 +76,10 @@ class FileWatcher(FileSystemEventHandler):
 
 def ui_loop(prompts):
     global driver, wait, playFirst
+
+    # current = get_ui_prompts()
+    # print(">>> current prompts：", current)
+    
     print("found these prompts:", prompts)
     for prompt in prompts:
         try:
@@ -94,6 +108,14 @@ def ui_loop(prompts):
             driver.execute_script("arguments[0].click();", play_button)
             print(f">*Ubiq*<Clicked the play button.")
             playFirst = True
+
+        # delete_prompt_by_text("soothing chilled piano")
+        # —— 最后执行 delete_queue 中挂起的删除请求 ——
+        with delete_lock:
+            while delete_queue:
+                keyword = delete_queue.pop(0)
+                delete_prompt_by_text(keyword)
+
     except Exception as e:
         print(f"Error in UI play: {e}")
 
@@ -128,14 +150,14 @@ def generate_music_from_prompt(data, chunk_counter):
         pcm_bytes = resampled_audio_data.tobytes()
 
         # ③ 先发一个 JSON 头（一次 clip 发一次即可；此处简单每帧都发）
-        send_audio_header(len(pcm_bytes))
+        # send_audio_header(len(pcm_bytes))
 
-        # ④ 按 16 000 B 切包输出到 stdout，Node 直接读取
-        PACK = 16_000
-        for i in range(0, len(pcm_bytes), PACK):
-            chunk = pcm_bytes[i:i+PACK]
-            sys.stdout.buffer.write(chunk)
-            sys.stdout.buffer.flush()
+        # # ④ 按 16 000 B 切包输出到 stdout，Node 直接读取
+        # PACK = 16_000
+        # for i in range(0, len(pcm_bytes), PACK):
+        #     chunk = pcm_bytes[i:i+PACK]
+        #     sys.stdout.buffer.write(chunk)
+        #     sys.stdout.buffer.flush()
 
 def send_audio_header(total_bytes: int):
     hdr = {
@@ -171,20 +193,89 @@ def recognize_from_file():
     finally:
         observer.join()
 
+def get_ui_prompts():
+    prompts = []
+    # 1) Retrieve all top-level prompt containers
+    containers = driver.find_elements(By.CSS_SELECTOR, "div.trackContainer")
+    for c in containers:
+        try:
+            # 2) Locate the text-only <div> within the container (assumes class "kWfOUR")
+            text_div = c.find_element(By.CSS_SELECTOR, "div.kWfOUR")
+            prompts.append(text_div.text.strip())
+        except:
+            # Fallback: find a <div> that has no child elements and contains text
+            text_div = c.find_element(
+                By.XPATH, ".//div[not(*) and normalize-space()]"
+            )
+            prompts.append(text_div.text.strip())
+    return prompts
+
+def delete_prompt_by_text(keyword):
+    try:
+        # Re-fetch all prompt containers and delete buttons
+        containers     = driver.find_elements(By.CSS_SELECTOR, "div.trackContainer")
+        delete_buttons = driver.find_elements(By.CSS_SELECTOR, "button.deleteButton")
+
+        # Iterate through each container to find the one matching the keyword
+        for idx, container in enumerate(containers):
+            # Attempt to locate the text element by its CSS class
+            try:
+                text_div = container.find_element(By.CSS_SELECTOR, "div.kWfOUR")
+            except:
+                # Fallback: find a div that contains only text (no child elements)
+                text_div = container.find_element(
+                    By.XPATH, ".//div[not(*) and normalize-space()]"
+                )
+
+            # Check if the prompt text matches the keyword exactly
+            if text_div.text.strip() == keyword:
+                # Click the corresponding delete button by index
+                if idx < len(delete_buttons):
+                    driver.execute_script(
+                        "arguments[0].click();",
+                        delete_buttons[idx]
+                    )
+                    print(f">*Ubiq*<Clicked delete for prompt '{keyword}' at index {idx}")
+                    return True
+                else:
+                    print(f">*Ubiq*<Found '{keyword}' at idx={idx} but no matching delete button.")
+                    return False
+
+        # If no matching prompt was found
+        print(f">*Ubiq*<Prompt '{keyword}' not found on page; no delete performed.")
+        return False
+
+    except Exception as e:
+        # Catch any unexpected errors during the deletion process
+        print(f">*Ubiq*<Error deleting prompt '{keyword}': {e}")
+        return False
+
+# 全局队列和锁
+delete_queue = []
+delete_lock  = threading.Lock()
+
 def listen_from_node():
     """
-    循环读取 Node 发来的 JSON（每行一条），
-    如果带 objectName / type / value 就自行处理。
+    这个线程一直跑，读 stdin，
+    收到 DeletePrompt 就把 prompt push 进 delete_queue。
     """
-    for line in sys.stdin:                      # ❶ 阻塞式逐行读取
+    for raw in sys.stdin:
+        print(f"[DEBUG] raw repr: {raw!r}")
+        line = raw.lstrip('\ufeff').strip()
+        if not line:
+            continue
         try:
             msg = json.loads(line)
-            if "objectName" in msg:
-                print(f"[From Node] objectName -> {msg['objectName']}")
-            if msg.get("type") == "SetVolume":
-                set_volume(int(msg.get("value", 80)))
+            if msg.get("type") == "DeletePrompt":
+                keyword = msg.get("prompt","").strip()
+                if keyword:
+                    with delete_lock:
+                        delete_queue.append(keyword)
+                    print(f">*Ubiq*<Queued delete for prompt: {keyword}")
         except Exception as e:
-            print(f"[From Node] JSON error: {e} / raw: {line!r}")
+            print(f"[From Node] JSON error: {e}")
+
+
 
 
 if __name__ == "__main__":

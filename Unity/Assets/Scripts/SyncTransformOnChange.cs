@@ -16,6 +16,8 @@ public class SyncTransformOnChange : MonoBehaviour
 
     public string objectName;
     public string description;
+    public string objectId;
+    private bool hasSent = false;
 
     private XRGrabInteractable grabInteractable;
 
@@ -45,25 +47,27 @@ public class SyncTransformOnChange : MonoBehaviour
     /// </summary>
     public void SyncIfChanged()
     {
-
         if (transform.position != lastPosition ||
             transform.eulerAngles != lastRotation ||
             transform.localScale != lastScale)
         {
             var msg = new SpawnMessage
             {
+                objectId = objectId,
                 objectName = objectName,
                 description = description,
                 position = transform.position,
                 rotation = transform.eulerAngles,
-                scale = transform.localScale
+                scale = transform.localScale,
+                type = hasSent ? "scale" : "add" // 加入类型字段
             };
 
             context.SendJson(msg);
 
-            Debug.Log($"[SyncTransform] Sent transform for {objectName} | Pos:{msg.position}, Rot:{msg.rotation}, Scale:{msg.scale}");
+            Debug.Log($"[SyncTransform] Sent ({msg.type}) for {objectName}, id:{msg.objectId} | Pos:{msg.position}, Rot:{msg.rotation}, Scale:{msg.scale}");
 
-            CacheCurrent(); // 发送后更新基准
+            hasSent = true; // 标记为已发送
+            CacheCurrent(); // 更新基准
         }
     }
 
