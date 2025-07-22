@@ -112,8 +112,7 @@ def ui_loop(prompts):
 
         print_all_prompt_volumes()
         set_prompt_volume_percent("calm", 10) 
-        pairs = get_all_prompt_volumes()
-        print(">>> current prompt-volume:", pairs)
+
         # delete_prompt_by_text("soothing chilled piano")
         # —— 最后执行 delete_queue 中挂起的删除请求 ——
         with delete_lock:
@@ -283,25 +282,6 @@ def get_prompt_text(container):
         # 兜底：找没有子元素、只有文本的 div
         return container.find_element(By.XPATH, ".//div[not(*) and normalize-space()]").text.strip()
 
-def get_all_prompt_volumes():
-    results = []
-    # 等待至少有一个 trackContainer
-    WebDriverWait(driver, 10).until(
-        lambda d: len(d.find_elements(By.CSS_SELECTOR, "div.trackContainer")) > 0
-    )
-
-    containers = driver.find_elements(By.CSS_SELECTOR, "div.trackContainer")
-    for c in containers:
-        try:
-            prompt = get_prompt_text(c)
-            # 该 track 下的 slider
-            slider = c.find_element(By.XPATH, ".//span[@role='slider' and @aria-valuenow]")
-            vol_str = slider.get_attribute("aria-valuenow")  # 可能是 '0.5' 或 '35'
-            results.append((prompt, vol_str))
-        except Exception as e:
-            print(f">*Ubiq*<抓取某条 prompt 失败: {e}")
-    return results
-
 def norm_vol(v):
     if isinstance(v, str):
         v = v.strip().rstrip('%')
@@ -382,43 +362,27 @@ def slide_prompt_volume(prompt, percent):
         print(f">*Ubiq*<滑动 '{prompt}' 失败: {e}")
         return False
     
-def _dump_all_prompts():
-    js = r"""
-    const res = [];
-    document.querySelectorAll('span[role="slider"][aria-valuenow]').forEach((sl,i)=>{
+def print_all_prompt_volumes():
+    js = """
+    return [...document.querySelectorAll('span[role="slider"][aria-valuenow]')].map(sl=>{
       const cont = sl.closest('div.trackContainer');
-      let txt = '';
-      if (cont) {
+      let txt='';
+      if(cont){
         const t1 = cont.querySelector('div.kWfOUR');
-        if (t1) {
-          txt = t1.textContent.trim();
-        } else {
-          // 找叶子 div
-          const divs = cont.querySelectorAll('div');
-          for (const d of divs) {
-            if (d.children.length === 0 && d.textContent.trim()) {
-              txt = d.textContent.trim();
-              break;
-            }
-          }
+        if(t1) txt=t1.textContent.trim();
+        else{
+          const divs=cont.querySelectorAll('div');
+          for(const d of divs){ if(d.children.length===0 && d.textContent.trim()){txt=d.textContent.trim();break;}}
         }
       }
-      res.push({
-        idx: i,
-        text: txt,
-        now: sl.getAttribute('aria-valuenow'),
-        min: sl.getAttribute('aria-valuemin'),
-        max: sl.getAttribute('aria-valuemax')
-      });
+      return {text:txt, now:sl.getAttribute('aria-valuenow'),
+              min:sl.getAttribute('aria-valuemin'), max:sl.getAttribute('aria-valuemax')};
     });
-    return res;
     """
-    return driver.execute_script(js)
+    data = driver.execute_script(js)
+    for i,d in enumerate(data):
+        print(f"[{i}] '{d['text']}' now={d['now']} min={d['min']} max={d['max']}")
 
-def print_all_prompt_volumes():
-    data = _dump_all_prompts()
-    for d in data:
-        print(f"[{d['idx']}] '{d['text']}' now={d['now']} min={d['min']} max={d['max']}")
 
 
 def set_prompt_volume_percent(prompt: str, percent):
