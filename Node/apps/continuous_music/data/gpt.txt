@@ -1,2 +1,1 @@
-[calm]
-[happy]
+[calm] {20}

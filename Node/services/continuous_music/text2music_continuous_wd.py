@@ -17,6 +17,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.action_chains import ActionChains
 import re
 
 from pathlib import Path
@@ -79,8 +80,7 @@ def ui_loop(prompts):
 
     # current = get_ui_prompts()
     # print(">>> current prompts：", current)
-    
-    print("found these prompts:", prompts)
+    # print("found these prompts:", prompts)
     for prompt in prompts:
         try:
             # Add new prompt
@@ -109,6 +109,11 @@ def ui_loop(prompts):
             print(f">*Ubiq*<Clicked the play button.")
             playFirst = True
 
+
+        print_all_prompt_volumes()
+        set_prompt_volume_percent("calm", 10) 
+        pairs = get_all_prompt_volumes()
+        print(">>> current prompt-volume:", pairs)
         # delete_prompt_by_text("soothing chilled piano")
         # —— 最后执行 delete_queue 中挂起的删除请求 ——
         with delete_lock:
@@ -255,10 +260,6 @@ delete_queue = []
 delete_lock  = threading.Lock()
 
 def listen_from_node():
-    """
-    这个线程一直跑，读 stdin，
-    收到 DeletePrompt 就把 prompt push 进 delete_queue。
-    """
     for raw in sys.stdin:
         print(f"[DEBUG] raw repr: {raw!r}")
         line = raw.lstrip('\ufeff').strip()
@@ -275,7 +276,206 @@ def listen_from_node():
         except Exception as e:
             print(f"[From Node] JSON error: {e}")
 
+def get_prompt_text(container):
+    try:
+        return container.find_element(By.CSS_SELECTOR, "div.kWfOUR").text.strip()
+    except Exception:
+        # 兜底：找没有子元素、只有文本的 div
+        return container.find_element(By.XPATH, ".//div[not(*) and normalize-space()]").text.strip()
 
+def get_all_prompt_volumes():
+    results = []
+    # 等待至少有一个 trackContainer
+    WebDriverWait(driver, 10).until(
+        lambda d: len(d.find_elements(By.CSS_SELECTOR, "div.trackContainer")) > 0
+    )
+
+    containers = driver.find_elements(By.CSS_SELECTOR, "div.trackContainer")
+    for c in containers:
+        try:
+            prompt = get_prompt_text(c)
+            # 该 track 下的 slider
+            slider = c.find_element(By.XPATH, ".//span[@role='slider' and @aria-valuenow]")
+            vol_str = slider.get_attribute("aria-valuenow")  # 可能是 '0.5' 或 '35'
+            results.append((prompt, vol_str))
+        except Exception as e:
+            print(f">*Ubiq*<抓取某条 prompt 失败: {e}")
+    return results
+
+def norm_vol(v):
+    if isinstance(v, str):
+        v = v.strip().rstrip('%')
+    try:
+        f = float(v)
+    except:
+        return None
+    if f <= 1:
+        f *= 100
+    return max(0, min(100, int(round(f))))
+
+def _find_container_by_prompt(prompt_text: str):
+    target = prompt_text.strip()
+    containers = driver.find_elements(By.CSS_SELECTOR, "div.trackContainer")
+    for c in containers:
+        try:
+            t = c.find_element(By.CSS_SELECTOR, "div.kWfOUR").text.strip()
+        except:
+            try:
+                t = c.find_element(By.XPATH, ".//div[not(*) and normalize-space()]").text.strip()
+            except:
+                continue
+        if t == target:
+            return c
+    return None
+
+def slide_prompt_volume(prompt, percent):
+    """
+    通过拖动滑块设置指定 prompt 的音量（0~100 / 0~1 都支持）
+    """
+    vol = norm_vol(percent)
+    if vol is None:
+        print(f">*Ubiq*<非法音量: {percent}")
+        return False
+
+    try:
+        # 1. 找到这个 prompt 的 container
+        container = _find_container_by_prompt(prompt)
+        if not container:
+            print(f">*Ubiq*<没找到 '{prompt}' 的 container")
+            return False
+
+        # 2. 找滑轨 & slider & thumb
+        track  = container.find_element(By.XPATH, ".//span[@data-orientation='horizontal' and @aria-disabled='false']")
+        slider = container.find_element(By.XPATH, ".//span[@role='slider' and @aria-valuenow]")
+        thumb  = container.find_element(By.XPATH, ".//span[contains(@style,'--radix-slider-thumb-transform')]")
+
+        # 3. 计算当前位置与目标位置（像素）
+        cur = norm_vol(slider.get_attribute("aria-valuenow"))
+        mn  = norm_vol(slider.get_attribute("aria-valuemin") or 0)
+        mx  = norm_vol(slider.get_attribute("aria-valuemax") or 100)
+        print("min", mn, "max", mx)
+
+        rect_track = track.rect
+        width = rect_track['width']
+        # 起点 & 终点（相对 track 左侧的像素）
+        start_px  = (cur - mn) / (mx - mn) * width
+        target_px = (vol - mn) / (mx - mn) * width
+        delta_x   = target_px - start_px
+        if abs(delta_x) < 1:
+            print(f">*Ubiq*<'{prompt}' 已经是 {vol}%")
+            return True
+
+        # 4. 用 ActionChains 拖动
+        actions = ActionChains(driver)
+        # 先把鼠标移动到 track 左上角偏移 start_px 的位置
+        actions.move_to_element_with_offset(track, start_px, rect_track['height']/2)
+        actions.click_and_hold()
+        actions.move_by_offset(delta_x, 0)
+        actions.release()
+        actions.perform()
+
+        # 校验
+        new_val = slider.get_attribute("aria-valuenow")
+        print(f">*Ubiq*<为 '{prompt}' 滑动到 {new_val}% (目标 {vol}%)")
+        return True
+    except Exception as e:
+        print(f">*Ubiq*<滑动 '{prompt}' 失败: {e}")
+        return False
+    
+def _dump_all_prompts():
+    js = r"""
+    const res = [];
+    document.querySelectorAll('span[role="slider"][aria-valuenow]').forEach((sl,i)=>{
+      const cont = sl.closest('div.trackContainer');
+      let txt = '';
+      if (cont) {
+        const t1 = cont.querySelector('div.kWfOUR');
+        if (t1) {
+          txt = t1.textContent.trim();
+        } else {
+          // 找叶子 div
+          const divs = cont.querySelectorAll('div');
+          for (const d of divs) {
+            if (d.children.length === 0 && d.textContent.trim()) {
+              txt = d.textContent.trim();
+              break;
+            }
+          }
+        }
+      }
+      res.push({
+        idx: i,
+        text: txt,
+        now: sl.getAttribute('aria-valuenow'),
+        min: sl.getAttribute('aria-valuemin'),
+        max: sl.getAttribute('aria-valuemax')
+      });
+    });
+    return res;
+    """
+    return driver.execute_script(js)
+
+def print_all_prompt_volumes():
+    data = _dump_all_prompts()
+    for d in data:
+        print(f"[{d['idx']}] '{d['text']}' now={d['now']} min={d['min']} max={d['max']}")
+
+
+def set_prompt_volume_percent(prompt: str, percent):
+    """
+    percent: 0~100 的百分比（整数/浮点/字符串都行）
+             0  -> min (比如 0)
+             100-> max (比如 2)
+             25 -> 映射到 0~2 范围的 0.5
+    """
+    # 先在 Python 端 clamp，避免 NaN
+    try:
+        pct = float(str(percent).strip().rstrip('%'))
+    except Exception:
+        print(f">*Ubiq*<非法百分比: {percent}")
+        return None
+    pct = max(0.0, min(100.0, pct))
+
+    js = r"""
+    return (function(name, pct){
+      // 1. 找到包含该 prompt 的 trackContainer
+      const containers = [...document.querySelectorAll('div.trackContainer')];
+      const cont = containers.find(c=>{
+        const t = c.querySelector('div.kWfOUR') || c.querySelector("div:not(:has(*))");
+        return t && t.textContent.trim() === name.trim();
+      });
+      if(!cont) return 'notfound';
+
+      // 2. 找 slider 元素
+      const sliderEl = cont.querySelector('span[role="slider"][aria-valuenow]');
+      if(!sliderEl) return 'no slider';
+
+      // 3. 读 min/max按百分比换算真实值
+      const vmin = parseFloat(sliderEl.getAttribute('aria-valuemin') || '0');
+      const vmax = parseFloat(sliderEl.getAttribute('aria-valuemax')  || '100');
+      const realVal = vmin + (vmax - vmin) * (pct/100);
+
+      // 4. React Fiber 寻找 onValueChange
+      const key = Object.keys(sliderEl).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactProps$'));
+      if(!key) return 'no fiber key';
+      let fiber = sliderEl[key];
+      let handler = null;
+      while(fiber){
+        const props = fiber.memoizedProps;
+        if(props && typeof props.onValueChange === 'function'){ handler = props.onValueChange; break; }
+        fiber = fiber.return;
+      }
+      if(!handler) return 'no handler';
+
+      // 5. 调用 handler 设置
+      handler([realVal]);
+
+      return {match: name, min:vmin, max:vmax, setPercent:pct, setReal:realVal};
+    })(arguments[0], arguments[1]);
+    """
+    result = driver.execute_script(js, prompt, pct)
+    print(f">*Ubiq*<set_prompt_volume_percent('{prompt}', {pct}) -> {result}")
+    return result
 
 
 if __name__ == "__main__":
