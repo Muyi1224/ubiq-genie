@@ -37,6 +37,10 @@ THRESHOLD = 100
 
 playFirst = False
 
+debug_log = open("debug.txt", "w", buffering=1)
+def debug(msg):
+    debug_log.write(f"{time.time()}: {msg}\n")
+    debug_log.flush()
 
 class FileWatcher(FileSystemEventHandler):
     """
@@ -77,7 +81,7 @@ class FileWatcher(FileSystemEventHandler):
 
 def ui_loop(prompts):
     global driver, wait, playFirst
-
+    debug("Test")
     # current = get_ui_prompts()
     # print(">>> current prompts：", current)
     # print("found these prompts:", prompts)
@@ -267,6 +271,7 @@ def listen_from_node():
         try:
             msg = json.loads(line)
             if msg.get("type") == "DeletePrompt":
+                debug(msg)
                 keyword = msg.get("prompt","").strip()
                 if keyword:
                     with delete_lock:
@@ -274,7 +279,7 @@ def listen_from_node():
                     print(f">*Ubiq*<Queued delete for prompt: {keyword}")
         except Exception as e:
             print(f"[From Node] JSON error: {e}")
-
+            
 def get_prompt_text(container):
     try:
         return container.find_element(By.CSS_SELECTOR, "div.kWfOUR").text.strip()

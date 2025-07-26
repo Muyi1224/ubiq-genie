@@ -73,6 +73,22 @@ class ServiceController extends EventEmitter {
                 this.emit('close', code, signal, identifier);
             });
         }
+        // if (childProcess && childProcess.stdout && childProcess.stderr) {
+        //     childProcess.stdout.on('data', (data) => {
+        //         // 打印到terminal
+        //         process.stdout.write(data);
+        //         this.emit('data', data, identifier);
+        //     });
+        //     childProcess.stderr.on('data', (data) => {
+        //         // 打印错误到terminal
+        //         process.stderr.write(data);
+        //         console.error(`\x1b[31mService ${this.name} error, from child process ${identifier}:${data}\x1b[0m`);
+        //     });
+        //     childProcess.on('close', (code, signal) => {
+        //         delete this.childProcesses[identifier];
+        //         this.emit('close', code, signal, identifier);
+        //     });
+        // }
 
         this.log(`Registered child process with identifier: ${identifier}`);
 

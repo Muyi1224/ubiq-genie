@@ -93,6 +93,7 @@ export class ApplicationController {
             shell: true,
         });
 
+
         if (child.stderr) {
             child.stderr.on('data', (data) => {
                 process.stderr.write(`\x1b[31m[Ubiq Server]\x1b[0m ${data}`);

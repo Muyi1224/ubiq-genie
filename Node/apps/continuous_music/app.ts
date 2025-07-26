@@ -64,7 +64,6 @@ export class ContinuousMusicAgent extends ApplicationController {
         // A SpeechToTextService to transcribe audio coming from peers
         this.components.speech2text = new SpeechToTextService(this.scene);
 
-        
         this.components.musicReceiver = new MessageReader(this.scene, 99);
         this.components.deleteReceiver = new MessageReader(this.scene, 100);
         // this.components.artInterpretation = new ArtInterpretationService(this.scene);
@@ -134,9 +133,9 @@ export class ContinuousMusicAgent extends ApplicationController {
 
         // STEP 1 this service receive the image and send to LLM 
         this.components.musicReceiver?.on('data', (data: any) => {
-            console.log("---- Step 1 -> send to create music prompt [...][...][...]");
+            //console.log("---- Step 1 -> send to create music prompt [...][...][...]");
             const selectionData = JSON.parse(data.message.toString());
-            console.log(`Received from Unity → ID: ${selectionData.objectId}, Name: ${selectionData.objectName}, Description: ${selectionData.description}, Scale: ${JSON.stringify(selectionData.scale)}`);
+            console.log(`Received from Unity → Type: ${selectionData.type}, ID: ${selectionData.objectId}, Name: ${selectionData.objectName}, Description: ${selectionData.description}, Scale: ${JSON.stringify(selectionData.scale)}`);
 
             //const peerUUID = selectionData.peer;
             //this.byteArray = selectionData.image;
@@ -175,9 +174,10 @@ export class ContinuousMusicAgent extends ApplicationController {
                 prompt: "calm"
             };
             // send to your running Python via the same service you use for music prompts:
+            const str = JSON.stringify(deleteMsg) + "\n";
             this.components.musicGenerationService?.sendToChildProcess(
                 'default', 
-                JSON.stringify(deleteMsg) + "\n"
+                str
             );
         });
                 
@@ -262,7 +262,7 @@ export class ContinuousMusicAgent extends ApplicationController {
             console.log('◎ Wrote to gpt.txt → ' + finalLine);
 
             // 打印 promptMap 状态
-            // this.printPromptMap();
+            this.printPromptMap();
         });
 
 

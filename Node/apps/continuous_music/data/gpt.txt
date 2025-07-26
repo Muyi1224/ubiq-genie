@@ -1,3 +1,4 @@
-[happy] {20}
-[calm] {20}
-[smooth] {30}
+[soothing tranquil piano] {50}
+[cool serene piano] {50}
+[chill relaxed piano] {50}
+[tranquil icy flute] {50}

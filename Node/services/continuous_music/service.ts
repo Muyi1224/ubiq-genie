@@ -29,6 +29,7 @@ class ContinuousMusicGenerationService extends ServiceController {
                     'conda',
                     [
                         'run', '-n', 'rgs',
+                        '--no-capture-output',
                         'python', '-u',
                         '../../services/continuous_music/text2music_continuous_wd.py',
                         '--prompt_postfix', nconf.get('promptFromSystem') || ''
