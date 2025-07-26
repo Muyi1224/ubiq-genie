@@ -51,6 +51,11 @@ public class SyncTransformOnChange : MonoBehaviour
             transform.eulerAngles != lastRotation ||
             transform.localScale != lastScale)
         {
+            // ① 先把自身放大
+            transform.localScale += Vector3.one * 0.1f;
+            var newScale = transform.localScale;       // 缓存一下
+
+            // ② 再把更新后的数据发出去
             var msg = new SpawnMessage
             {
                 objectId = objectId,
@@ -58,18 +63,20 @@ public class SyncTransformOnChange : MonoBehaviour
                 description = description,
                 position = transform.position,
                 rotation = transform.eulerAngles,
-                scale = transform.localScale,
-                type = hasSent ? "scale" : "add" // 加入类型字段
+                scale = newScale,
+                type = hasSent ? "scale" : "add"
             };
 
             context.SendJson(msg);
-
             Debug.Log($"[SyncTransform] Sent ({msg.type}) for {objectName}, id:{msg.objectId} | Pos:{msg.position}, Rot:{msg.rotation}, Scale:{msg.scale}");
 
-            hasSent = true; // 标记为已发送
-            CacheCurrent(); // 更新基准
+            hasSent = true;
+
+            // ③ 更新基准，避免下一次对比仍认为“未变化”
+            CacheCurrent();
         }
     }
+
 
     private void CacheCurrent()
     {

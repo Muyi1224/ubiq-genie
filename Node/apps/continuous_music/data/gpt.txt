@@ -1,4 +1,3 @@
-[soothing tranquil piano] {50}
-[cool serene piano] {50}
-[chill relaxed piano] {50}
-[tranquil icy flute] {50}
+[cool tranquil piano] {65}
+[cool serene flute] {65}
+[upbeat fiery guitar] {48}

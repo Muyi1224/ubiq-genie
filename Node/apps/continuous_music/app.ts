@@ -160,26 +160,128 @@ export class ContinuousMusicAgent extends ApplicationController {
             if(selectionData.type === "add"){
                 this.components.textGenerationService?.sendToChildProcess('default', selectionData.description + '\n');
             }
-        });
-        
 
+            if (selectionData.type === "scale") {
+                const objId = selectionData.objectId?.trim();
+                if (!objId) return;
+
+                // 1. 在 promptMap 里找行
+                let oldLine: string | undefined;
+                for (const [line, ids] of this.promptMap.entries()) {
+                    if (ids.has(objId)) { oldLine = line; break; }
+                }
+                if (!oldLine) {
+                    console.warn(`No prompt line found for objectId ${objId}`);
+                    return;
+                }
+
+                // 2. 提取关键字，拼新行
+                const kwMatch = oldLine.match(/\[([^\]]+)\]/);
+                const keywords = kwMatch ? kwMatch[1].trim() : '';
+                const newLine = `[${keywords}] {${volumeFromScale}}`;
+
+                // 3. 更新 gpt.txt
+                const __dirname = dirname(fileURLToPath(import.meta.url));
+                const gptPath   = path.resolve(__dirname, '../../apps/continuous_music/data/gpt.txt');
+                const newContent = fs.readFileSync(gptPath, 'utf-8')
+                                    .split(/\r?\n/)
+                                    .map(l => (l.trim() === oldLine.trim() ? newLine : l))
+                                    .filter(l => l.trim())      // 去掉空行
+                                    .join('\n') + '\n';
+                fs.writeFileSync(gptPath, newContent);
+                console.log(`◎ Updated gpt.txt → ${newLine}`);
+
+                // 4. 更新 promptMap
+                const ids = this.promptMap.get(oldLine)!;
+                ids.delete(objId);
+                if (ids.size === 0) this.promptMap.delete(oldLine);
+
+                if (!this.promptMap.has(newLine)) this.promptMap.set(newLine, new Set());
+                this.promptMap.get(newLine)!.add(objId);
+
+                // 5. 通知 Python 调整音量
+                const msg = { type: "SetPromptVolume", prompt: keywords, volume: volumeFromScale };
+                this.components.musicGenerationService?.sendToChildProcess(
+                    'default',
+                    JSON.stringify(msg) + '\n'
+                );
+                console.log(`◎ Sent SetPromptVolume for '${keywords}' → ${volumeFromScale}`);
+                return; // scale 处理完毕
+            }
+
+        });
+
+        // === Delete message from Unity =============================================
         this.components.deleteReceiver?.on('data', (data: any) => {
             const parsed = JSON.parse(data.message.toString());
-            console.log("delete object:", parsed.objectId);
+            if (parsed.type !== 'delete') return;          // 只处理 delete
+            const objId = parsed.objectId?.trim();
+            if (!objId) return;
 
-            // forward to Python
-            const deleteMsg = {
-                type: "DeletePrompt",
-                // prompt: parsed.description   // or whatever text you want to delete
-                prompt: "calm"
-            };
-            // send to your running Python via the same service you use for music prompts:
-            const str = JSON.stringify(deleteMsg) + "\n";
-            this.components.musicGenerationService?.sendToChildProcess(
-                'default', 
-                str
+            console.log("delete object:", objId);
+
+            // ---------- 在 promptMap 中查找对应的 prompt ---------------------------
+            let matchedPromptLine: string | undefined;
+            for (const [promptLine, idSet] of this.promptMap.entries()) {
+                if (idSet.has(objId)) {
+                    matchedPromptLine = promptLine;        // 形如 "[soothing tranquil piano] {50}"
+                    idSet.delete(objId);                   // 从集合移除该 ID
+                    if (idSet.size === 0) this.promptMap.delete(promptLine);
+                    break;
+                }
+            }
+            if (!matchedPromptLine) {
+                console.warn(`No prompt found for objectId ${objId}`);
+                return;
+            }
+
+            // ---------- 提取关键字并发送 DeletePrompt ------------------------------
+            const kwMatch = matchedPromptLine.match(/\[([^\]]+)\]/);
+            const keywords = kwMatch ? kwMatch[1].trim() : '';
+            if (keywords) {
+                const deleteMsg = { type: "DeletePrompt", prompt: keywords };
+                this.components.musicGenerationService?.sendToChildProcess(
+                    'default',
+                    JSON.stringify(deleteMsg) + '\n'
+                );
+                console.log(`◎ Sent DeletePrompt for '${keywords}'`);
+            }
+
+            // ---------- 从 gpt.txt 中删除这一行 ------------------------------------
+            const __dirname = dirname(fileURLToPath(import.meta.url));
+            const gptPath   = path.resolve(
+                __dirname,
+                '../../apps/continuous_music/data/gpt.txt'
             );
+
+            const newContent = fs.readFileSync(gptPath, 'utf-8')
+                                .split(/\r?\n/)
+                                .filter(line => line.trim() && line.trim() !== matchedPromptLine.trim())
+                                .join('\n') + '\n';
+            fs.writeFileSync(gptPath, newContent);
+
+            console.log(`◎ Removed line from gpt.txt → ${matchedPromptLine}`);
         });
+
+        
+
+        // this.components.deleteReceiver?.on('data', (data: any) => {
+        //     const parsed = JSON.parse(data.message.toString());
+        //     console.log("delete object:", parsed.objectId);
+
+        //     // forward to Python
+        //     const deleteMsg = {
+        //         type: "DeletePrompt",
+        //         // prompt: parsed.description   // or whatever text you want to delete
+        //         prompt: "calm"
+        //     };
+        //     // send to your running Python via the same service you use for music prompts:
+        //     const str = JSON.stringify(deleteMsg) + "\n";
+        //     this.components.musicGenerationService?.sendToChildProcess(
+        //         'default', 
+        //         str
+        //     );
+        // });
                 
         // // STEP 2 this service retrieve information about object and functionalities
         // this.components.artInterpretation?.on('data', (data: Buffer, identifier: string) => {
@@ -267,29 +369,29 @@ export class ContinuousMusicAgent extends ApplicationController {
 
 
 
-
-        this.components.musicGenerationService?.on('data', (data: Buffer, identifier: string) => {
-            let response = data;
-            //console.log('Received TTS response from child process ' + identifier);
+        // TBD
+        // this.components.musicGenerationService?.on('data', (data: Buffer, identifier: string) => {
+        //     let response = data;
+        //     //console.log('Received TTS response from child process ' + identifier);
             
-            const debug = data.toString();
-            if (debug.startsWith(">*Ubiq*<")){
-                console.log('Response: ' + debug);
-                return;
-            }
+        //     const debug = data.toString();
+        //     if (debug.startsWith(">*Ubiq*<")){
+        //         console.log('Response: ' + debug);
+        //         return;
+        //     }
 
-            this.scene.send(new NetworkId(99), {
-                type: 'AudioInfo',
-                targetPeer: "Music Service",
-                audioLength: data.length,
-            });
+        //     this.scene.send(new NetworkId(99), {
+        //         type: 'AudioInfo',
+        //         targetPeer: "Music Service",
+        //         audioLength: data.length,
+        //     });
             
-            while (response.length > 0) {
-                //console.log('Response length: ' + response.length + ' bytes');
-                this.scene.send(new NetworkId(99), response.slice(0, 16000));
-                response = response.slice(16000);
-            }
-        });
+        //     while (response.length > 0) {
+        //         //console.log('Response length: ' + response.length + ' bytes');
+        //         this.scene.send(new NetworkId(99), response.slice(0, 16000));
+        //         response = response.slice(16000);
+        //     }
+        // });
     }
 
     printPromptMap() {

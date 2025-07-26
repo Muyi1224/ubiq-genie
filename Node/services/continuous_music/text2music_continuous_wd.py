@@ -81,7 +81,6 @@ class FileWatcher(FileSystemEventHandler):
 
 def ui_loop(prompts):
     global driver, wait, playFirst
-    debug("Test")
     # current = get_ui_prompts()
     # print(">>> current prompts：", current)
     # print("found these prompts:", prompts)
@@ -115,7 +114,11 @@ def ui_loop(prompts):
 
 
         print_all_prompt_volumes()
-        set_prompt_volume_percent("calm", 10) 
+        # set_prompt_volume_percent("calm", 10) 
+        with volume_lock:
+            while volume_queue:
+                kw, vol = volume_queue.pop(0)
+                set_prompt_volume_percent(kw, vol)
 
         # delete_prompt_by_text("soothing chilled piano")
         # —— 最后执行 delete_queue 中挂起的删除请求 ——
@@ -244,6 +247,7 @@ def delete_prompt_by_text(keyword):
                         delete_buttons[idx]
                     )
                     print(f">*Ubiq*<Clicked delete for prompt '{keyword}' at index {idx}")
+                    debug(f">*Ubiq*<Clicked delete for prompt '{keyword}' at index {idx}")
                     return True
                 else:
                     print(f">*Ubiq*<Found '{keyword}' at idx={idx} but no matching delete button.")
@@ -260,7 +264,9 @@ def delete_prompt_by_text(keyword):
 
 # 全局队列和锁
 delete_queue = []
+volume_queue = []
 delete_lock  = threading.Lock()
+volume_lock  = threading.Lock()
 
 def listen_from_node():
     for raw in sys.stdin:
@@ -270,15 +276,30 @@ def listen_from_node():
             continue
         try:
             msg = json.loads(line)
-            if msg.get("type") == "DeletePrompt":
-                debug(msg)
-                keyword = msg.get("prompt","").strip()
+            mtype = msg.get("type")
+
+            # ----- 删除指定 prompt -----------------------------------------
+            if mtype == "DeletePrompt":
+                keyword = msg.get("prompt", "").strip()
                 if keyword:
                     with delete_lock:
                         delete_queue.append(keyword)
                     print(f">*Ubiq*<Queued delete for prompt: {keyword}")
+                    debug(f">*Ubiq*<Queued delete for prompt: {keyword}")
+
+            # ----- 调整指定 prompt 的音量 ----------------------------------
+            elif mtype == "SetPromptVolume":
+                prompt  = msg.get("prompt", "").strip()
+                volume  = msg.get("volume")          # 0~100 的整数
+                if prompt and volume is not None:
+                    with volume_lock:
+                        volume_queue.append((prompt, volume))
+                    print(f">*Ubiq*<Queued volume {volume} for '{prompt}'")
+                    debug(f">*Ubiq*<Queued volume {volume} for '{prompt}'")
+
         except Exception as e:
             print(f"[From Node] JSON error: {e}")
+
             
 def get_prompt_text(container):
     try:
@@ -444,6 +465,7 @@ def set_prompt_volume_percent(prompt: str, percent):
     """
     result = driver.execute_script(js, prompt, pct)
     print(f">*Ubiq*<set_prompt_volume_percent('{prompt}', {pct}) -> {result}")
+    debug(f">*Ubiq*<set_prompt_volume_percent('{prompt}', {pct}) -> {result}")
     return result
 
 
