@@ -15,6 +15,8 @@ GameObject:
   - component: {fileID: 5233112735571880146}
   - component: {fileID: 3246652757590873094}
   - component: {fileID: 3325344339982641821}
+  - component: {fileID: 864827394634189167}
+  - component: {fileID: -3858805847384372255}
   m_Layer: 0
   m_Name: fireball
   m_TagString: Untagged
@@ -272,3 +274,32 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 070799b2ed65d8d48af09792babaf6fb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!114 &864827394634189167
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5906112520879447989}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 97129cf17067a1047809c510f1a9105a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  objectName: 
+  description: 
+  objectId: 
+--- !u!114 &-3858805847384372255
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5906112520879447989}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 746304831a4788c4da36d0cf2a17e7ca, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  infoPanelPrefab: {fileID: 1320780530492710182, guid: ce56cb9dd5a3a16468ad3e284e5faeb5, type: 3}
+  panelOffset: {x: 2, y: 0, z: 0}
