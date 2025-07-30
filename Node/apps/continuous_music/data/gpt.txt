@@ -1,4 +1,2 @@
-[fiery passionate guitar] {23}
-[sizzling fiery guitar] {28}
-[chilling frosty piano] {65}
-[chilling frosty piano] {55}
+[chilled serene piano] {60}
+[intense fiery guitar] {23}

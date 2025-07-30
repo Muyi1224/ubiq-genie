@@ -237,6 +237,13 @@ export class ContinuousMusicAgent extends ApplicationController {
                 return;
             }
 
+            if (matchedPromptLine) {
+                this.sendPromptMapToUnity("delete", 99, [
+                    { prompt: matchedPromptLine, objectIds: [objId] }
+                ]);
+            }
+
+
             // ---------- 提取关键字并发送 DeletePrompt ------------------------------
             const kwMatch = matchedPromptLine.match(/\[([^\]]+)\]/);
             const keywords = kwMatch ? kwMatch[1].trim() : '';
@@ -263,7 +270,6 @@ export class ContinuousMusicAgent extends ApplicationController {
             fs.writeFileSync(gptPath, newContent);
 
             console.log(`◎ Removed line from gpt.txt → ${matchedPromptLine}`);
-            this.sendPromptMapToUnity("delete", 99);
         });
 
         
@@ -398,22 +404,25 @@ export class ContinuousMusicAgent extends ApplicationController {
         // });
     }
 
-    sendPromptMapToUnity(updateType: string, channel: number = 101) {
-    const promptArray = Array.from(this.promptMap.entries()).map(([prompt, ids]) => ({
-        prompt,
-        objectIds: Array.from(ids),
-    }));
+    sendPromptMapToUnity(
+        updateType: string,
+        channel: number = 99,
+        customData?: { prompt: string; objectIds: string[] }[]
+    ) {
+        const promptArray = customData ?? Array.from(this.promptMap.entries()).map(
+            ([prompt, ids]) => ({ prompt, objectIds: Array.from(ids) })
+        );
 
-    const payload = {
-        type: "PromptMapUpdate",   
-        updateType,              
-        data: promptArray,
-        ts: Date.now(),
-    };
+        const payload = { type: "PromptMapUpdate", updateType, data: promptArray, ts: Date.now() };
+        this.scene.send(new NetworkId(channel), payload);
 
-    this.scene.send(new NetworkId(channel), payload);
-    console.log(`◎ Sent PromptMap (${updateType}) to ch ${channel}`);
+        console.log(
+            `◎ PromptMap (${updateType}) → ch ${channel}\n` +
+            JSON.stringify(payload, null, 2)
+        );
     }
+
+
 
 
     printPromptMap() {

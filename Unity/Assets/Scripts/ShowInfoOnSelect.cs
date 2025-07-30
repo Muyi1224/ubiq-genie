@@ -1,4 +1,3 @@
-// ShowInfoOnSelect.cs (升级版)
 using UnityEngine;
 using UnityEngine.XR.Interaction.Toolkit;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;

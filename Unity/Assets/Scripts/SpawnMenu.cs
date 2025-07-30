@@ -197,7 +197,6 @@ public class SpawnMenu : MonoBehaviour
         }
     }
 
-    // 专门处理生成物体的方法
     private void HandleSpawnObject(SpawnMessage msg)
     {
         var item = spawnableItems.Find(i => i.name == msg.objectName);
@@ -259,9 +258,41 @@ public class SpawnMenu : MonoBehaviour
             case "delete":
                 foreach (var pd in msg.data)
                 {
-                    if (promptDictionary.Remove(pd.prompt))
+                    if (!promptDictionary.TryGetValue(pd.prompt, out var stored))
                     {
-                        Debug.Log($"[DEL]   - {pd.prompt}");
+                        Debug.LogWarning($"[DEL] prompt not found: {pd.prompt}");
+                        continue;
+                    }
+
+                    if (pd.objectIds != null && pd.objectIds.Length > 0)
+                    {
+                        var list = stored.objectIds.ToList();
+                        int removed = 0;
+                        foreach (var id in pd.objectIds)
+                        {
+                            if (list.Remove(id))
+                                removed++;
+                        }
+
+                        if (removed > 0)
+                        {
+                            Debug.Log($"[DEL] {removed} id(s) from {pd.prompt}");
+                        }
+
+                        if (list.Count == 0)
+                        {
+                            promptDictionary.Remove(pd.prompt);
+                            Debug.Log($"[DEL]  {pd.prompt} (no ids left)");
+                        }
+                        else
+                        {
+                            stored.objectIds = list.ToArray();
+                        }
+                    }
+                    else
+                    {
+                        promptDictionary.Remove(pd.prompt);
+                        Debug.Log($"[DEL]   {pd.prompt}");
                     }
                 }
                 break;

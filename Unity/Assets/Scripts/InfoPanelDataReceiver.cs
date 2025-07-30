@@ -12,13 +12,6 @@ public class InfoPanelDataReceiver : MonoBehaviour
     [Tooltip("用于显示缩放的文本框")]
     public TextMeshProUGUI scaleText;
 
-    // 你未来可以轻松地在这里添加更多文本框，比如 descriptionText
-
-    /// <summary>
-    /// 公共方法，用于更新面板上显示的所有信息
-    /// </summary>
-    /// <param name="newName">要显示的物体名称</param>
-    /// <param name="newScale">要显示的物体缩放值</param>
     public void UpdateInfo(string newName, Vector3 newScale)
     {
         if (nameText != null)

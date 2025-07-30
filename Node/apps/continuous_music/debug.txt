@@ -1,6 +1,8 @@
-1753913705.3324084: >*Ubiq*<Queued volume 60 for 'chilling frosty piano'
-1753913705.5003138: >*Ubiq*<set_prompt_volume_percent('chilling frosty piano', 60.0) -> notfound
-1753913724.6018734: >*Ubiq*<Queued volume 28 for 'sizzling fiery guitar'
-1753913724.7800832: >*Ubiq*<set_prompt_volume_percent('sizzling fiery guitar', 28.0) -> notfound
-1753913737.7188308: >*Ubiq*<Queued volume 65 for 'chilling frosty piano'
-1753913737.9063878: >*Ubiq*<set_prompt_volume_percent('chilling frosty piano', 65.0) -> notfound
+1753916096.1766706: >*Ubiq*<Queued volume 28 for 'fierce intense drums'
+1753916096.3790162: >*Ubiq*<set_prompt_volume_percent('fierce intense drums', 28.0) -> {'match': 'fierce intense drums', 'max': 2, 'min': 0, 'setPercent': 28, 'setReal': 0.56}
+1753916118.5466208: >*Ubiq*<Queued volume 33 for 'fierce intense drums'
+1753916118.667886: >*Ubiq*<set_prompt_volume_percent('fierce intense drums', 33.0) -> {'match': 'fierce intense drums', 'max': 2, 'min': 0, 'setPercent': 33, 'setReal': 0.66}
+1753916152.9335256: >*Ubiq*<Queued delete for prompt: fierce intense drums
+1753916153.1046813: >*Ubiq*<Clicked delete for prompt 'fierce intense drums' at index 1
+1753916171.5142581: >*Ubiq*<Queued volume 60 for 'chilled serene piano'
+1753916171.6256378: >*Ubiq*<set_prompt_volume_percent('chilled serene piano', 60.0) -> {'match': 'chilled serene piano', 'max': 2, 'min': 0, 'setPercent': 60, 'setReal': 1.2}
