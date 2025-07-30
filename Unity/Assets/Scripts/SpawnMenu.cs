@@ -7,10 +7,12 @@ using System;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
 using Unity.VisualScripting;
 using UnityEditor;
+using System.Linq;
 public class SpawnMenu : MonoBehaviour
 {
     public GameObject buttonPrefab;
     public Transform buttonContainer;
+    private Dictionary<string, PromptData> promptDictionary = new Dictionary<string, PromptData>();
 
     [System.Serializable]
     public class SpawnableItem
@@ -18,6 +20,29 @@ public class SpawnMenu : MonoBehaviour
         public string name;
         public GameObject prefab;
         [TextArea] public string description;
+    }
+
+    [System.Serializable]
+    public class MessageType
+    {
+        public string type;
+    }
+
+    // 专门用来解析 PromptMapUpdate 消息的类
+    [System.Serializable]
+    public class PromptData
+    {
+        public string prompt;
+        public string[] objectIds;
+    }
+
+    [System.Serializable]
+    public class PromptMapUpdateMessage
+    {
+        public string type;
+        public string updateType;
+        public PromptData[] data;
+        public long ts;
     }
 
     public List<SpawnableItem> spawnableItems;
@@ -93,6 +118,7 @@ public class SpawnMenu : MonoBehaviour
         {
             Debug.Log("Instantiating prefab: " + prefab.name);
             var go = Instantiate(prefab);
+            go.name = objectName;
             go.transform.position = position ?? (Camera.main.transform.position + Camera.main.transform.forward * 1.5f);
 
             if (go.GetComponent<XRGrabInteractable>() == null)
@@ -150,7 +176,30 @@ public class SpawnMenu : MonoBehaviour
 
     public void ProcessMessage(ReferenceCountedSceneGraphMessage message)
     {
-        var msg = message.FromJson<SpawnMessage>();
+
+        var genericMessage = message.FromJson<MessageType>();
+
+        switch (genericMessage.type)
+        {
+            case "PromptMapUpdate":
+                var promptMsg = message.FromJson<PromptMapUpdateMessage>();
+                HandlePromptMapUpdate(promptMsg); 
+                break;
+
+            case "SpawnObject": 
+                var spawnMsg = message.FromJson<SpawnMessage>();
+                HandleSpawnObject(spawnMsg); 
+                break;
+
+            default:
+                Debug.LogWarning("Received unknown message type: " + genericMessage.type);
+                break;
+        }
+    }
+
+    // 专门处理生成物体的方法
+    private void HandleSpawnObject(SpawnMessage msg)
+    {
         var item = spawnableItems.Find(i => i.name == msg.objectName);
         if (item != null)
         {
@@ -159,6 +208,89 @@ public class SpawnMenu : MonoBehaviour
         else
         {
             Debug.LogError("No prefab found for: " + msg.objectName);
+        }
+    }
+
+
+    private void HandlePromptMapUpdate(PromptMapUpdateMessage msg)
+    {
+        Debug.Log($"Received prompt-map ({msg.updateType}) with {msg.data.Length} items");
+
+        switch (msg.updateType)
+        {
+            // add
+            case "add":
+                foreach (var pd in msg.data)
+                {
+                    if (!promptDictionary.ContainsKey(pd.prompt))
+                    {
+                        promptDictionary[pd.prompt] = pd;         
+                        Debug.Log($"[ADD]   + {pd.prompt}");
+                    }
+                }
+                break;
+
+            // scale
+            case "scale":
+                foreach (var pd in msg.data)
+                {
+                    if (pd.objectIds == null) continue;
+
+                    foreach (var objId in pd.objectIds)
+                    {
+                        var kvOld = promptDictionary
+                                    .FirstOrDefault(kv =>
+                                        kv.Value.objectIds != null &&
+                                        kv.Value.objectIds.Contains(objId));
+
+                        if (!string.IsNullOrEmpty(kvOld.Key))
+                        {
+                            promptDictionary.Remove(kvOld.Key);
+                            Debug.Log($"[SCALE] - {kvOld.Key}");
+                        }
+                    }
+
+                    promptDictionary[pd.prompt] = pd;
+                    Debug.Log($"[SCALE] + {pd.prompt}");
+                }
+                break;
+
+            // delete
+            case "delete":
+                foreach (var pd in msg.data)
+                {
+                    if (promptDictionary.Remove(pd.prompt))
+                    {
+                        Debug.Log($"[DEL]   - {pd.prompt}");
+                    }
+                }
+                break;
+
+            default:
+                promptDictionary.Clear();
+                foreach (var pd in msg.data)
+                {
+                    promptDictionary[pd.prompt] = pd;
+                }
+                Debug.Log("[FULL] promptDictionary replaced with new snapshot");
+                break;
+        }
+
+        // Debug
+        if (promptDictionary.Count == 0)
+        {
+            Debug.Log("Dictionary is now EMPTY");
+        }
+        else
+        {
+            int idx = 0;
+            foreach (var kv in promptDictionary)
+            {
+                string firstId = (kv.Value.objectIds != null && kv.Value.objectIds.Length > 0)
+                                    ? kv.Value.objectIds[0] : "N/A";
+                Debug.Log($"[{idx++}] Key=\"{kv.Key}\"  ->  ObjIDs=[{firstId}...]");
+            }
+            Debug.Log($"--- End print, total: {promptDictionary.Count} ---");
         }
     }
 

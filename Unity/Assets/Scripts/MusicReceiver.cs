@@ -4,7 +4,7 @@ using UnityEngine;
 
 public class MusicReceiver : MonoBehaviour
 {
-    private readonly NetworkId netId = new NetworkId(99);
+    private readonly NetworkId netId = new NetworkId(102);
     private NetworkContext ctx;
 
     private int expectedBytes = 0;

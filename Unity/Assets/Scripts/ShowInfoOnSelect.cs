@@ -1,6 +1,6 @@
+// ShowInfoOnSelect.cs (升级版)
 using UnityEngine;
 using UnityEngine.XR.Interaction.Toolkit;
-using TMPro;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
 
 [RequireComponent(typeof(XRBaseInteractable))]
@@ -31,18 +31,11 @@ public class ShowInfoOnSelect : MonoBehaviour
         _interactable.selectEntered.RemoveListener(ToggleInfoPanel);
     }
 
-    // --- 新增的 Update 方法 ---
-    /// <summary>
-    /// 在每一帧调用
-    /// </summary>
     void Update()
     {
-        // 如果面板存在，就持续更新它的朝向，让它总是面对玩家
         if (_currentInfoPanel != null && Camera.main != null)
         {
-            // 让面板朝向主摄像机
             _currentInfoPanel.transform.LookAt(Camera.main.transform);
-            // 因为Canvas正面是Z轴负方向，所以需要“转身”180度
             _currentInfoPanel.transform.Rotate(0f, 180f, 0f);
         }
     }
@@ -61,39 +54,36 @@ public class ShowInfoOnSelect : MonoBehaviour
 
     private void ShowPanel()
     {
-        if (infoPanelPrefab == null)
-        {
-            Debug.LogWarning("信息面板的Prefab没有被设置！", this);
-            return;
-        }
+        if (infoPanelPrefab == null) return;
 
-        // 1. 实例化面板。注意：此时先不用关心位置和旋转。
         _currentInfoPanel = Instantiate(infoPanelPrefab);
-
-        // --- 核心改动：建立父子关系 ---
-        // 2. 将面板设置为当前物体的子物体。这是实现跟随的关键！
         _currentInfoPanel.transform.SetParent(this.transform);
-
-        // 3. 现在设置它的 *局部* 位置和旋转。
-        //    因为已经是子物体，所以直接使用Offset作为局部坐标即可。
         _currentInfoPanel.transform.localPosition = panelOffset;
-        _currentInfoPanel.transform.localRotation = Quaternion.identity; // 重置局部旋转
+        _currentInfoPanel.transform.localRotation = Quaternion.identity;
 
-        // 4. 动态设置Canvas的Event Camera
         Canvas panelCanvas = _currentInfoPanel.GetComponent<Canvas>();
         if (panelCanvas != null)
         {
             panelCanvas.worldCamera = Camera.main;
         }
 
-        // 5. 更新文本信息
-        TextMeshProUGUI nameText = _currentInfoPanel.GetComponentInChildren<TextMeshProUGUI>();
-        if (nameText != null)
+        // --- 核心改动：获取数据接收器并传递所有信息 ---
+        InfoPanelDataReceiver panelData = _currentInfoPanel.GetComponent<InfoPanelDataReceiver>();
+        if (panelData != null)
         {
-            nameText.text = gameObject.name;
-        }
+            // 1. 获取物体的名称
+            string objectName = gameObject.name;
+            // 2. 获取物体的当前缩放值
+            Vector3 objectScale = transform.localScale;
 
-        // 6. 在Update中会处理朝向，这里可以不用再设置了
+            // 3. 调用面板的数据更新方法，把两条信息都传过去
+            panelData.UpdateInfo(objectName, objectScale);
+        }
+        else
+        {
+            // 如果面板上没有找到接收器脚本，给出清晰的错误提示
+            Debug.LogError("在InfoPanel Prefab上没有找到 InfoPanelDataReceiver 脚本！请检查Prefab的设置。", infoPanelPrefab);
+        }
     }
 
     private void HidePanel()

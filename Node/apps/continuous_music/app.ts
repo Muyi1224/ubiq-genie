@@ -199,6 +199,8 @@ export class ContinuousMusicAgent extends ApplicationController {
                 if (!this.promptMap.has(newLine)) this.promptMap.set(newLine, new Set());
                 this.promptMap.get(newLine)!.add(objId);
 
+                this.sendPromptMapToUnity("scale", 99);
+
                 // 5. 通知 Python 调整音量
                 const msg = { type: "SetPromptVolume", prompt: keywords, volume: volumeFromScale };
                 this.components.musicGenerationService?.sendToChildProcess(
@@ -261,6 +263,7 @@ export class ContinuousMusicAgent extends ApplicationController {
             fs.writeFileSync(gptPath, newContent);
 
             console.log(`◎ Removed line from gpt.txt → ${matchedPromptLine}`);
+            this.sendPromptMapToUnity("delete", 99);
         });
 
         
@@ -365,6 +368,7 @@ export class ContinuousMusicAgent extends ApplicationController {
 
             // 打印 promptMap 状态
             this.printPromptMap();
+            this.sendPromptMapToUnity("add", 99);
         });
 
 
@@ -394,12 +398,32 @@ export class ContinuousMusicAgent extends ApplicationController {
         // });
     }
 
+    sendPromptMapToUnity(updateType: string, channel: number = 101) {
+    const promptArray = Array.from(this.promptMap.entries()).map(([prompt, ids]) => ({
+        prompt,
+        objectIds: Array.from(ids),
+    }));
+
+    const payload = {
+        type: "PromptMapUpdate",   
+        updateType,              
+        data: promptArray,
+        ts: Date.now(),
+    };
+
+    this.scene.send(new NetworkId(channel), payload);
+    console.log(`◎ Sent PromptMap (${updateType}) to ch ${channel}`);
+    }
+
+
     printPromptMap() {
     console.log("Current promptMap status:");
     for (const [prompt, idSet] of this.promptMap.entries()) {
         console.log(`- Prompt: "${prompt}"`);
         console.log(`  Object IDs: ${Array.from(idSet).join(', ')}`);
     }
+
+    
 }
 
 }

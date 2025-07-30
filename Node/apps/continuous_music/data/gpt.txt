@@ -1,3 +1,4 @@
-[cool tranquil piano] {65}
-[cool serene flute] {65}
-[upbeat fiery guitar] {48}
+[fiery passionate guitar] {23}
+[sizzling fiery guitar] {28}
+[chilling frosty piano] {65}
+[chilling frosty piano] {55}

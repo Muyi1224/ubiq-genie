@@ -301,5 +301,5 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 746304831a4788c4da36d0cf2a17e7ca, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  infoPanelPrefab: {fileID: 1320780530492710182, guid: ce56cb9dd5a3a16468ad3e284e5faeb5, type: 3}
+  infoPanelPrefab: {fileID: 7925474778327363041, guid: b68030664e144054ca988f19b397d612, type: 3}
   panelOffset: {x: 2, y: 0, z: 0}
