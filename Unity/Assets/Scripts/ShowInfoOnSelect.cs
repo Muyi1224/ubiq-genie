@@ -4,7 +4,7 @@ using UnityEngine.XR.Interaction.Toolkit.Interactables;
 
 // 确保这个脚本挂载在可以被选择的、并且有Renderer组件的物体上
 [RequireComponent(typeof(XRBaseInteractable))]
-[RequireComponent(typeof(Renderer))] // 建议添加，确保物体一定有Renderer组件
+[RequireComponent(typeof(Renderer))]
 public class ShowInfoOnSelect : MonoBehaviour
 {
     [Header("UI 设置")]
@@ -34,7 +34,6 @@ public class ShowInfoOnSelect : MonoBehaviour
 
     void Update()
     {
-        // 让面板始终朝向摄像机，保持可读性
         if (_currentInfoPanel != null && Camera.main != null)
         {
             _currentInfoPanel.transform.LookAt(Camera.main.transform);
@@ -98,8 +97,6 @@ public class ShowInfoOnSelect : MonoBehaviour
             }
             else
             {
-                // 这个警告现在可能不再需要，因为不是所有物体都有prompt
-                // Debug.LogWarning("在选中的物体上没有找到 SyncTransformOnChange 脚本！无法获取ID。", gameObject);
             }
 
             // 更新文本信息

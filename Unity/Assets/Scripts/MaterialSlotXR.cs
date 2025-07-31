@@ -5,7 +5,7 @@ using UnityEngine.XR.Interaction.Toolkit.Interactors;
 
 public class MaterialSlotXR : XRGrabInteractable
 {
-    public Material mat;            // Inspector ÀïÍÏ²ÄÖÊ
+    public Material mat;  
     protected override void OnSelectExited(SelectExitEventArgs args)
     {
         base.OnSelectExited(args);
