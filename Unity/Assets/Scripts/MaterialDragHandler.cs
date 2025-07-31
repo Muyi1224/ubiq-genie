@@ -2,11 +2,6 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
-/// <summary>
-/// 将预设材质拖到目标物体上。
-/// 运行时会在根 Canvas 下创建一个“拖拽中的 ghost”，
-/// 跟随鼠标 / 控制器指针移动，并在结束时销毁。
-/// </summary>
 public class MaterialDragHandler : MonoBehaviour,
     IBeginDragHandler, IDragHandler, IEndDragHandler
 {

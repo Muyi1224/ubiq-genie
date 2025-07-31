@@ -10,6 +10,7 @@ using UnityEditor;
 using System.Linq;
 public class SpawnMenu : MonoBehaviour
 {
+    public static SpawnMenu Instance { get; private set; }
     public GameObject buttonPrefab;
     public Transform buttonContainer;
     private Dictionary<string, PromptData> promptDictionary = new Dictionary<string, PromptData>();
@@ -69,6 +70,21 @@ public class SpawnMenu : MonoBehaviour
 
     private NetworkId networkId = new NetworkId(99);
     private NetworkContext context;
+
+    void Awake()
+    {
+        // 实现单例模式的标准做法
+        if (Instance != null && Instance != this)
+        {
+            // 如果场景中已经存在一个 SpawnMenu 实例，销毁当前这个重复的
+            Destroy(gameObject);
+        }
+        else
+        {
+            // 将当前实例设为全局唯一的单例
+            Instance = this;
+        }
+    }
 
     void Start()
     {
@@ -323,6 +339,25 @@ public class SpawnMenu : MonoBehaviour
             }
             Debug.Log($"--- End print, total: {promptDictionary.Count} ---");
         }
+    }
+    public string GetPromptForObjectId(string objectId)
+    {
+        if (string.IsNullOrEmpty(objectId))
+        {
+            return "ID is invalid";
+        }
+
+        // 使用 LINQ 在字典的值中查找包含该 objectId 的条目
+        var promptEntry = promptDictionary
+            .FirstOrDefault(kv => kv.Value.objectIds != null && kv.Value.objectIds.Contains(objectId));
+
+        // FirstOrDefault 对于引用类型，如果没找到会返回默认值 (key=null)
+        if (promptEntry.Key != null)
+        {
+            return promptEntry.Key; // 返回找到的 prompt (也就是字典的 Key)
+        }
+
+        return "No associated prompt"; // 如果没找到，返回默认文本
     }
 
     public void SpawnByName(string name, Vector3? position = null)

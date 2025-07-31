@@ -66,21 +66,34 @@ public class ShowInfoOnSelect : MonoBehaviour
             panelCanvas.worldCamera = Camera.main;
         }
 
-        // --- 核心改动：获取数据接收器并传递所有信息 ---
         InfoPanelDataReceiver panelData = _currentInfoPanel.GetComponent<InfoPanelDataReceiver>();
         if (panelData != null)
         {
-            // 1. 获取物体的名称
             string objectName = gameObject.name;
-            // 2. 获取物体的当前缩放值
             Vector3 objectScale = transform.localScale;
+            string objectId = "ID not found"; 
+            SyncTransformOnChange syncScript = GetComponent<SyncTransformOnChange>();
+            if (syncScript != null)
+            {
+                objectId = syncScript.objectId;
+            }
 
-            // 3. 调用面板的数据更新方法，把两条信息都传过去
-            panelData.UpdateInfo(objectName, objectScale);
+            string prompt = "Prompt not available";
+            if (SpawnMenu.Instance != null)
+            {
+                // 调用 SpawnMenu 的公共方法来获取 prompt
+                prompt = SpawnMenu.Instance.GetPromptForObjectId(objectId);
+            }
+            else
+            {
+                Debug.LogWarning("在选中的物体上没有找到 SyncTransformOnChange 脚本！无法获取ID。", gameObject);
+            }
+
+            //panelData.UpdateInfo(objectName, objectScale, objectId, prompt);
+            panelData.UpdateInfo(objectName, objectScale, prompt);
         }
         else
         {
-            // 如果面板上没有找到接收器脚本，给出清晰的错误提示
             Debug.LogError("在InfoPanel Prefab上没有找到 InfoPanelDataReceiver 脚本！请检查Prefab的设置。", infoPanelPrefab);
         }
     }
