@@ -1,38 +1,42 @@
-// InfoPanelDataReceiver.cs
+// InfoPanelDataReceiver.cs (最终正确版)
 using UnityEngine;
 using TMPro;
 
-// 这个脚本挂载在 infoPanel Prefab 上
 public class InfoPanelDataReceiver : MonoBehaviour
 {
     [Header("UI文本组件的引用")]
     public TextMeshProUGUI nameText;
     public TextMeshProUGUI scaleText;
-    //public TextMeshProUGUI idText;
-
-    [Tooltip("用于显示Prompt的文本框")]
     public TextMeshProUGUI promptText;
 
-    public void UpdateInfo(string newName, Vector3 newScale, string newPrompt) //, string newId)
+    [Header("颜色控制器")]
+    public FlexibleColorPicker colorPicker;
+
+    private Renderer targetRenderer;
+
+    public void UpdateInfo(string newName, Vector3 newScale, string newPrompt)
     {
-        if (nameText != null)
+        if (nameText != null) nameText.text = "name: " + newName;
+        if (scaleText != null) scaleText.text = "scale: " + newScale.ToString();
+        if (promptText != null) promptText.text = "Prompt: " + newPrompt;
+    }
+
+    public void SetTargetObject(Renderer rendererToControl)
+    {
+        targetRenderer = rendererToControl;
+
+        if (targetRenderer != null && colorPicker != null)
         {
-            nameText.text = "name: " + newName;
+            // 在修复了FlexibleColorPicker的Bug后，这行代码现在可以完美工作了
+            colorPicker.color = targetRenderer.material.color;
         }
+    }
 
-        if (scaleText != null)
+    void Update()
+    {
+        if (targetRenderer != null && colorPicker != null)
         {
-            scaleText.text = "scale: " + newScale.ToString();
-        }
-
-        //if (idText != null)
-        //{
-        //    idText.text = "ID: " + newId;
-        //}
-
-        if (promptText != null)
-        {
-            promptText.text = "Prompt: " + newPrompt;
+            targetRenderer.material.color = colorPicker.color;
         }
     }
 }

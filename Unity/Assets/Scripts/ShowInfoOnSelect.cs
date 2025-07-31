@@ -2,7 +2,9 @@ using UnityEngine;
 using UnityEngine.XR.Interaction.Toolkit;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
 
+// 确保这个脚本挂载在可以被选择的、并且有Renderer组件的物体上
 [RequireComponent(typeof(XRBaseInteractable))]
+[RequireComponent(typeof(Renderer))] // 建议添加，确保物体一定有Renderer组件
 public class ShowInfoOnSelect : MonoBehaviour
 {
     [Header("UI 设置")]
@@ -32,10 +34,11 @@ public class ShowInfoOnSelect : MonoBehaviour
 
     void Update()
     {
+        // 让面板始终朝向摄像机，保持可读性
         if (_currentInfoPanel != null && Camera.main != null)
         {
             _currentInfoPanel.transform.LookAt(Camera.main.transform);
-            _currentInfoPanel.transform.Rotate(0f, 180f, 0f);
+            _currentInfoPanel.transform.Rotate(0f, 180f, 0f); // 旋转180度，使其正面朝向相机
         }
     }
 
@@ -66,12 +69,22 @@ public class ShowInfoOnSelect : MonoBehaviour
             panelCanvas.worldCamera = Camera.main;
         }
 
-        InfoPanelDataReceiver panelData = _currentInfoPanel.GetComponent<InfoPanelDataReceiver>();
+        // --- 核心修改点 ---
+        // 1. 使用 GetComponentInChildren 在子对象中查找脚本
+        InfoPanelDataReceiver panelData = _currentInfoPanel.GetComponentInChildren<InfoPanelDataReceiver>();
+
         if (panelData != null)
         {
+            // 成功找到脚本，现在可以传递数据了
+            Debug.Log("成功在InfoPanel Prefab的子对象中找到 InfoPanelDataReceiver 脚本。");
+
+            // 2. 调用 SetTargetObject，将这个物体的Renderer传递过去，以控制颜色
+            panelData.SetTargetObject(GetComponent<Renderer>());
+
+            // --- 以下是原有的逻辑，保持不变 ---
             string objectName = gameObject.name;
             Vector3 objectScale = transform.localScale;
-            string objectId = "ID not found"; 
+            string objectId = "ID not found";
             SyncTransformOnChange syncScript = GetComponent<SyncTransformOnChange>();
             if (syncScript != null)
             {
@@ -81,20 +94,20 @@ public class ShowInfoOnSelect : MonoBehaviour
             string prompt = "Prompt not available";
             if (SpawnMenu.Instance != null)
             {
-                // 调用 SpawnMenu 的公共方法来获取 prompt
                 prompt = SpawnMenu.Instance.GetPromptForObjectId(objectId);
             }
             else
             {
-                Debug.LogWarning("在选中的物体上没有找到 SyncTransformOnChange 脚本！无法获取ID。", gameObject);
+                // 这个警告现在可能不再需要，因为不是所有物体都有prompt
+                // Debug.LogWarning("在选中的物体上没有找到 SyncTransformOnChange 脚本！无法获取ID。", gameObject);
             }
 
-            //panelData.UpdateInfo(objectName, objectScale, objectId, prompt);
+            // 更新文本信息
             panelData.UpdateInfo(objectName, objectScale, prompt);
         }
         else
         {
-            Debug.LogError("在InfoPanel Prefab上没有找到 InfoPanelDataReceiver 脚本！请检查Prefab的设置。", infoPanelPrefab);
+            Debug.LogError("在InfoPanel Prefab及其所有子对象上都没有找到 InfoPanelDataReceiver 脚本！请检查Prefab的设置。", infoPanelPrefab);
         }
     }
 
