@@ -1,6 +1,25 @@
-1753918903.3113108: >*Ubiq*<Queued volume 28 for 'fiery intense electric guitar'
-1753918903.6495395: >*Ubiq*<set_prompt_volume_percent('fiery intense electric guitar', 28.0) -> {'match': 'fiery intense electric guitar', 'max': 2, 'min': 0, 'setPercent': 28, 'setReal': 0.56}
-1753918907.5658596: >*Ubiq*<Queued volume 33 for 'fiery intense electric guitar'
-1753918907.802318: >*Ubiq*<set_prompt_volume_percent('fiery intense electric guitar', 33.0) -> {'match': 'fiery intense electric guitar', 'max': 2, 'min': 0, 'setPercent': 33, 'setReal': 0.66}
-1753918911.4780085: >*Ubiq*<Queued volume 38 for 'fiery intense electric guitar'
-1753918911.71815: >*Ubiq*<set_prompt_volume_percent('fiery intense electric guitar', 38.0) -> {'match': 'fiery intense electric guitar', 'max': 2, 'min': 0, 'setPercent': 38, 'setReal': 0.76}
+1754275437.1277888: >*Ubiq*<Queued volume 28 for 'melancholic haunting piano'
+1754275437.2586305: >*Ubiq*<set_prompt_volume_percent('melancholic haunting piano', 28.0) -> {'match': 'melancholic haunting piano', 'max': 2, 'min': 0, 'setPercent': 28, 'setReal': 0.56}
+1754275443.9424217: >*Ubiq*<Queued volume 33 for 'melancholic haunting piano'
+1754275444.0437524: >*Ubiq*<set_prompt_volume_percent('melancholic haunting piano', 33.0) -> {'match': 'melancholic haunting piano', 'max': 2, 'min': 0, 'setPercent': 33, 'setReal': 0.66}
+1754275444.4677536: >*Ubiq*<Queued volume 38 for 'melancholic haunting piano'
+1754275444.5983095: >*Ubiq*<set_prompt_volume_percent('melancholic haunting piano', 38.0) -> {'match': 'melancholic haunting piano', 'max': 2, 'min': 0, 'setPercent': 38, 'setReal': 0.76}
+1754275445.435186: >*Ubiq*<Queued volume 43 for 'melancholic haunting piano'
+1754275445.5408633: >*Ubiq*<set_prompt_volume_percent('melancholic haunting piano', 43.0) -> {'match': 'melancholic haunting piano', 'max': 2, 'min': 0, 'setPercent': 43, 'setReal': 0.86}
+1754275445.9847045: >*Ubiq*<Queued volume 48 for 'melancholic haunting piano'
+1754275446.0854313: >*Ubiq*<set_prompt_volume_percent('melancholic haunting piano', 48.0) -> {'match': 'melancholic haunting piano', 'max': 2, 'min': 0, 'setPercent': 48, 'setReal': 0.96}
+1754275454.167328: >*Ubiq*<Queued delete for prompt: melancholic haunting piano
+1754275454.2827933: >*Ubiq*<Clicked delete for prompt 'melancholic haunting piano' at index 2
+1754275465.0675776: >*Ubiq*<Queued volume 53 for 'ethereal mysterious piano'
+1754275465.1768215: >*Ubiq*<set_prompt_volume_percent('ethereal mysterious piano', 53.0) -> {'match': 'ethereal mysterious piano', 'max': 2, 'min': 0, 'setPercent': 53, 'setReal': 1.06}
+1754275465.644768: >*Ubiq*<Queued volume 58 for 'ethereal mysterious piano'
+1754275465.7448251: >*Ubiq*<set_prompt_volume_percent('ethereal mysterious piano', 58.0) -> {'match': 'ethereal mysterious piano', 'max': 2, 'min': 0, 'setPercent': 58, 'setReal': 1.16}
+1754275467.9971159: >*Ubiq*<Queued volume 63 for 'ethereal mysterious piano'
+1754275468.0971029: >*Ubiq*<set_prompt_volume_percent('ethereal mysterious piano', 63.0) -> {'match': 'ethereal mysterious piano', 'max': 2, 'min': 0, 'setPercent': 63, 'setReal': 1.26}
+1754275470.0724573: >*Ubiq*<Queued volume 68 for 'ethereal mysterious piano'
+1754275470.1718209: >*Ubiq*<set_prompt_volume_percent('ethereal mysterious piano', 68.0) -> {'match': 'ethereal mysterious piano', 'max': 2, 'min': 0, 'setPercent': 68, 'setReal': 1.36}
+1754275483.723779: >*Ubiq*<Queued delete for prompt: ethereal mysterious piano
+1754275483.8077748: >*Ubiq*<Clicked delete for prompt 'ethereal mysterious piano' at index 2
+1754275489.2248979: >*Ubiq*<Queued volume 73 for 'serene enchanting piano'
+1754275489.4527416: >*Ubiq*<set_prompt_volume_percent('serene enchanting piano', 73.0) -> {'match': 'serene enchanting piano', 'max': 2, 'min': 0, 'setPercent': 73, 'setReal': 1.46}
+1754275489.5139315: >*Ubiq*<Queued volume 78 for 'serene enchanting piano'

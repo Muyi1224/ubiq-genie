@@ -68,19 +68,13 @@ public class ShowInfoOnSelect : MonoBehaviour
             panelCanvas.worldCamera = Camera.main;
         }
 
-        // --- 核心修改点 ---
-        // 1. 使用 GetComponentInChildren 在子对象中查找脚本
         InfoPanelDataReceiver panelData = _currentInfoPanel.GetComponentInChildren<InfoPanelDataReceiver>();
 
         if (panelData != null)
         {
-            // 成功找到脚本，现在可以传递数据了
-            Debug.Log("成功在InfoPanel Prefab的子对象中找到 InfoPanelDataReceiver 脚本。");
 
-            // 2. 调用 SetTargetObject，将这个物体的Renderer传递过去，以控制颜色
             panelData.SetTargetObject(GetComponent<Renderer>());
 
-            // --- 以下是原有的逻辑，保持不变 ---
             string objectName = gameObject.name;
             Vector3 objectScale = transform.localScale;
             string objectId = "ID not found";
@@ -99,7 +93,6 @@ public class ShowInfoOnSelect : MonoBehaviour
             {
             }
 
-            // 更新文本信息
             panelData.UpdateInfo(objectName, objectScale, prompt);
         }
         else

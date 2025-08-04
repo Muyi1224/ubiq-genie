@@ -52,9 +52,6 @@ public class DeleteOnButton : MonoBehaviour
         DeleteWithMessage();
     }
 
-    // ------------------------------------------
-    // 以下内容与原脚本相同，仅微调了 null 判定
-    // ------------------------------------------
     private void DeleteWithMessage()
     {
         if (!syncInfo)

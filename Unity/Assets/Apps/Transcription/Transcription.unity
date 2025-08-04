@@ -634,10 +634,10 @@ MonoBehaviour:
   spawnableItems:
   - name: fireball
     prefab: {fileID: 5906112520879447989, guid: 04490b957c39d2742838a2111da2ea1d, type: 3}
-    description: red hot fireball
+    description: A red tree made of wood that makes piano sounds
   - name: iceball
     prefab: {fileID: 8400669972282009126, guid: 8444881ab0a2d7f499ab47818e737430, type: 3}
-    description: blue cold iceball
+    description: A blue snell made of iorn that makes guitar sounds
 --- !u!114 &663261642
 MonoBehaviour:
   m_ObjectHideFlags: 0

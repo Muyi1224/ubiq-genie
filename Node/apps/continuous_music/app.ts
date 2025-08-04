@@ -135,7 +135,7 @@ export class ContinuousMusicAgent extends ApplicationController {
         this.components.musicReceiver?.on('data', (data: any) => {
             //console.log("---- Step 1 -> send to create music prompt [...][...][...]");
             const selectionData = JSON.parse(data.message.toString());
-            console.log(`Received from Unity → Type: ${selectionData.type}, ID: ${selectionData.objectId}, Name: ${selectionData.objectName}, Description: ${selectionData.description}, Scale: ${JSON.stringify(selectionData.scale)}`);
+            console.log(`Received from Unity → Type: ${selectionData.type}, ID: ${selectionData.objectId}, Description: ${selectionData.description}, Scale: ${JSON.stringify(selectionData.scale)}`);
 
             //const peerUUID = selectionData.peer;
             //this.byteArray = selectionData.image;
@@ -208,7 +208,7 @@ export class ContinuousMusicAgent extends ApplicationController {
                     JSON.stringify(msg) + '\n'
                 );
                 console.log(`◎ Sent SetPromptVolume for '${keywords}' → ${volumeFromScale}`);
-                return; // scale 处理完毕
+                return; 
             }
 
         });
@@ -274,24 +274,6 @@ export class ContinuousMusicAgent extends ApplicationController {
 
         
 
-        // this.components.deleteReceiver?.on('data', (data: any) => {
-        //     const parsed = JSON.parse(data.message.toString());
-        //     console.log("delete object:", parsed.objectId);
-
-        //     // forward to Python
-        //     const deleteMsg = {
-        //         type: "DeletePrompt",
-        //         // prompt: parsed.description   // or whatever text you want to delete
-        //         prompt: "calm"
-        //     };
-        //     // send to your running Python via the same service you use for music prompts:
-        //     const str = JSON.stringify(deleteMsg) + "\n";
-        //     this.components.musicGenerationService?.sendToChildProcess(
-        //         'default', 
-        //         str
-        //     );
-        // });
-                
         // // STEP 2 this service retrieve information about object and functionalities
         // this.components.artInterpretation?.on('data', (data: Buffer, identifier: string) => {
         //     const response = data.toString();
@@ -373,7 +355,7 @@ export class ContinuousMusicAgent extends ApplicationController {
             console.log('◎ Wrote to gpt.txt → ' + finalLine);
 
             // 打印 promptMap 状态
-            this.printPromptMap();
+            // this.printPromptMap();
             this.sendPromptMapToUnity("add", 99);
         });
 
@@ -416,10 +398,11 @@ export class ContinuousMusicAgent extends ApplicationController {
         const payload = { type: "PromptMapUpdate", updateType, data: promptArray, ts: Date.now() };
         this.scene.send(new NetworkId(channel), payload);
 
-        console.log(
-            `◎ PromptMap (${updateType}) → ch ${channel}\n` +
-            JSON.stringify(payload, null, 2)
-        );
+        // Log message that send to Unity
+        // console.log(
+        //     `◎ PromptMap (${updateType}) → ch ${channel}\n` +
+        //     JSON.stringify(payload, null, 2)
+        // );
     }
 
 
