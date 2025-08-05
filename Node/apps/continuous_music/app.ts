@@ -211,6 +211,86 @@ export class ContinuousMusicAgent extends ApplicationController {
                 return; 
             }
 
+            if (selectionData.type === "mute") {
+                const objId = selectionData.objectId?.trim();
+                if (!objId) return;
+
+                let matchedPromptLine: string | undefined;
+                let matchedKeywords: string | undefined;
+
+                // 找到包含该 objectId 且关键词匹配的 promptLine
+                for (const [promptLine, idSet] of this.promptMap.entries()) {
+                    if (idSet.has(objId)) {
+                        const match = promptLine.match(/\[([^\]]+)\]/);
+                        if (match) {
+                            matchedKeywords = match[1].trim();
+                            matchedPromptLine = promptLine;
+                            break;
+                        }
+                    }
+                }
+
+                if (!matchedPromptLine || !matchedKeywords) {
+                    console.warn(`Mute: Cannot find prompt line or keywords for objectId ${objId}`);
+                    return;
+                }
+
+                // 构造并发送 mute 消息
+                const msg = {
+                    type: "Mute",
+                    objectId: objId,
+                    mute: selectionData.mute,
+                    prompt: matchedKeywords
+                };
+
+                this.components.musicGenerationService?.sendToChildProcess(
+                    'default',
+                    JSON.stringify(msg) + '\n'
+                );
+
+                console.log(`◎ Sent mute status to Python → objectId: ${msg.objectId}, mute: ${msg.mute}, prompt: ${msg.prompt}`);
+                return;
+            }
+
+            const opt = selectionData.type?.toLowerCase();     // density / brightness / chaos
+            const lv  = selectionData.level ?? selectionData.density;  // auto / low / high
+
+            if (["density", "brightness", "chaos"].includes(opt) && lv) {
+                const msg = {
+                    type:  opt,   
+                    level: lv    
+                };
+
+                this.components.musicGenerationService?.sendToChildProcess(
+                    "default",
+                    JSON.stringify(msg) + "\n"
+                );
+                return;
+            }
+
+            if (selectionData.type === "bpm") {
+                const msg = { type: "bpm", value: selectionData.value };   // 60-180 或 "auto"
+                this.components.musicGenerationService?.sendToChildProcess(
+                    "default",
+                    JSON.stringify(msg) + "\n"
+                );
+                return;
+            }
+
+            if (selectionData.type === "trackmute") {
+                // selectionData.track 应为 "drums" | "bass" | "other"
+                const msg = {
+                    type: "TrackMute",
+                    track: (selectionData.track || "").toLowerCase(),
+                    mute : !!selectionData.mute        // true / false
+                };
+                this.components.musicGenerationService?.sendToChildProcess(
+                    "default",
+                    JSON.stringify(msg) + "\n"
+                );
+                return;
+            }
+
         });
 
         // === Delete message from Unity =============================================

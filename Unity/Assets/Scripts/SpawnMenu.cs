@@ -71,6 +71,11 @@ public class SpawnMenu : MonoBehaviour
     private NetworkId networkId = new NetworkId(99);
     private NetworkContext context;
 
+    [Header("UI References")]
+    public OptionSwitcher[] optionSwitchers;
+    public TrackMuteSwitcher trackMuteSwitcher;
+    public BpmSender bpmSender;
+
     void Awake()
     {
         // 实现单例模式的标准做法
@@ -90,6 +95,16 @@ public class SpawnMenu : MonoBehaviour
     {
         //context = NetworkScene.Register(this);
         context = NetworkScene.Register(this, networkId);
+
+        if (trackMuteSwitcher) trackMuteSwitcher.SetContext(context);
+        if (bpmSender) bpmSender.SetContext(context);
+
+        // 通过 Inspector 拖好的引用注入 NetworkContext
+        foreach (var sw in optionSwitchers)
+        {
+            if (sw) sw.SetContext(context);
+        }
+
         PopulateMenu();
     }
 

@@ -267,6 +267,56 @@ delete_queue = []
 volume_queue = []
 delete_lock  = threading.Lock()
 volume_lock  = threading.Lock()
+    
+
+def _is_button_pressed(btn):
+    """
+    返回 True=已静音, False=未静音, None=无法判断
+    """
+    aria = btn.get_attribute("aria-pressed")
+    if aria is not None:
+        return aria.lower() == "true"
+
+    cls = (btn.get_attribute("class") or "").lower()
+    if "active" in cls or "toggled" in cls:
+        return True
+    if "inactive" in cls:
+        return False
+    return None
+
+
+def ensure_mute_state(prompt_text: str, target_mute: bool, max_retry=3, wait_sec=0.15):
+    """
+    点击 muteButton 直到按钮状态 == target_mute
+    """
+    try:
+        cont = _find_container_by_prompt(prompt_text)
+        if not cont:
+            print(f">*Ubiq*<找不到 prompt '{prompt_text}' 的 container")
+            return False
+
+        btn = cont.find_element(By.CSS_SELECTOR, "button.muteButton")
+
+        for attempt in range(max_retry):
+            cur_state = _is_button_pressed(btn)
+            if cur_state == target_mute:
+                print(f">*Ubiq*<'{prompt_text}' 已是 mute={target_mute} (尝试 {attempt})")
+                return True
+
+            # 状态未知或不符 → 点击一次再等
+            driver.execute_script("arguments[0].click();", btn)
+            time.sleep(wait_sec)
+
+        # 尝试多次后仍未达到
+        final_state = _is_button_pressed(btn)
+        print(f">*Ubiq*<⚠️ 无法将 '{prompt_text}' 设为 mute={target_mute}，最终状态={final_state}")
+        return False
+
+    except Exception as e:
+        print(f">*Ubiq*<点击 muteButton 失败: {e}")
+        return False
+
+
 
 def listen_from_node():
     for raw in sys.stdin:
@@ -296,6 +346,42 @@ def listen_from_node():
                         volume_queue.append((prompt, volume))
                     print(f">*Ubiq*<Queued volume {volume} for '{prompt}'")
                     debug(f">*Ubiq*<Queued volume {volume} for '{prompt}'")
+
+            elif mtype == "Mute":
+                prompt = msg.get("prompt", "").strip()
+                target = bool(msg.get("mute"))  # true=静音
+                if prompt:
+                    ensure_mute_state(prompt, target)
+
+            elif mtype in ("density", "brightness", "chaos"):
+                level = (msg.get("level") or
+                        msg.get("density") or  
+                        "").strip().lower()     # "auto" / "low" / "high"
+
+                if not level:
+                    print(f">*Ubiq*<⚠️ {mtype} 缺少 level")
+                    continue
+
+                if mtype == "density":
+                    ensure_density(level)
+                elif mtype == "brightness":
+                    ensure_brightness(level)
+                else:                            # SetChaos
+                    ensure_chaos(level)
+
+                debug(f">*Ubiq*<执行 {mtype} → {level}")
+            
+            elif mtype == "bpm":
+                ensure_bpm(msg.get("value", "auto"))
+            
+            elif mtype == "TrackMute":
+                track = msg.get("track", "").strip().lower()   # drums / bass / other
+                target = bool(msg.get("mute"))                 # True=静音
+                if track in ("drums", "bass", "other"):
+                    ensure_track_mute(track, target)
+
+
+
 
         except Exception as e:
             print(f"[From Node] JSON error: {e}")
@@ -467,6 +553,244 @@ def set_prompt_volume_percent(prompt: str, percent):
     print(f">*Ubiq*<set_prompt_volume_percent('{prompt}', {pct}) -> {result}")
     debug(f">*Ubiq*<set_prompt_volume_percent('{prompt}', {pct}) -> {result}")
     return result
+
+# ---------- 通用内部工具 ---------- #
+def _find_button(prefix: str, level: str):
+    """
+    优先按 id 查找  <button id="density_auto">…
+    如果前端改了 id，再退而按 data-motion or label 文本模糊匹配
+    """
+    # 1) id 方式（最快最稳）
+    try:
+        return driver.find_element(By.ID, f"{prefix}_{level}")
+    except Exception:
+        pass
+
+    # 2) 按 data-motion 属性（Google MusicFX 页面会带 data-motion-pop-id）
+    try:
+        return driver.find_element(
+            By.CSS_SELECTOR,
+            f'button[data-motion-pop-id*="{prefix}"][data-motion-pop-id*="{level}"]'
+        )
+    except Exception:
+        pass
+
+    # 3) 最后兜底：在同容器(label)下通过顺序查找
+    try:
+        label_texts = {
+            "density": ("density", "密度"),
+            "brightness": ("brightness", "亮度"),
+            "chaos": ("chaos", "混乱", "随机")   # 可能翻译不同
+        }
+        label_words = label_texts.get(prefix, ())
+        # 找到写着“密度/亮度/混乱”等字样的 label，然后在同级下拿 button 列表
+        for word in label_words:
+            lab = driver.find_element(By.XPATH, f"//label[contains(text(), '{word}')]")
+            # 同一个父节点里第 1 / 2 / 3 个按钮即 auto/low/high
+            btns = lab.find_elements(By.XPATH, ".//preceding::button")[-3:]
+            idx  = {"auto":0, "low":1, "high":2}[level]
+            return btns[idx]
+    except Exception:
+        pass
+    return None
+
+
+def _is_selected(button):
+    aria = button.get_attribute("aria-pressed")
+    if aria:
+        return aria.lower() == "true"
+    cls = (button.get_attribute("class") or "").lower()
+    return "active" in cls or "selected" in cls or "toggled" in cls
+
+
+def _ensure(prefix: str, level: str, retry=3, wait=0.15):
+    level = level.lower().strip()
+    if level not in ("auto", "low", "high"):
+        debug(f">*Ubiq*<非法 level '{level}' for {prefix}")
+        return False
+
+    btn = _find_button(prefix, level)
+    if not btn:
+        debug(f">*Ubiq*<找不到按钮 {prefix}_{level}")
+        return False
+
+    for _ in range(retry):
+        if _is_selected(btn):
+            debug(f">*Ubiq*<{prefix} 已是 {level}")
+            return True
+        driver.execute_script("arguments[0].click();", btn)
+        time.sleep(wait)
+
+    debug(f">*Ubiq*<无法把 {prefix} 切到 {level}")
+    return False
+
+def ensure_density(level: str, max_retry=3, wait_sec=0.15):
+    return _ensure("density", level, max_retry, wait_sec)
+
+def ensure_brightness(level: str, max_retry=3, wait_sec=0.15):
+    return _ensure("brightness", level, max_retry, wait_sec)
+
+def ensure_chaos(level: str, max_retry=3, wait_sec=0.15):
+    # “混乱 / 随机度” 我用 chaos 前缀；若前端实际 id 用 randomness，自行改成 randomness
+    return _ensure("chaos", level, max_retry, wait_sec)
+
+# 60–180 BPM 约束
+# === 60–180 BPM =========================================================
+BPM_MIN = 60
+BPM_MAX = 180
+
+# —— 1. 找顶部 BPM 按钮 ——————————————————————————————
+def _find_bpm_button():
+    """
+    返回「顶部 BPM 按钮」的 WebElement  
+    • 先找 aria-haspopup="dialog" 且内部有 <small>BPM</small>  
+    • 再兜底按文字 “BPM” 匹配
+    """
+    XPATH_BTN = (
+        # ① 你的截图：<button aria-haspopup="dialog"> <small>BPM</small> <p>102</p> …
+        "//button[@aria-haspopup='dialog' and .//small[normalize-space()='BPM']]"
+        # ② 若上面失败，再模糊找含 BPM 的按钮
+        " | //button[contains(.,'BPM')]"
+    )
+    return driver.find_element(By.XPATH, XPATH_BTN)
+
+from selenium.common.exceptions import TimeoutException
+
+def _wait_bpm_panel(btn, timeout=5):
+    pid = btn.get_attribute("aria-controls")
+    if not pid:
+        raise TimeoutException("BPM button missing aria-controls")
+    panel = WebDriverWait(driver, timeout).until(
+        EC.visibility_of_element_located((By.ID, pid))
+    )
+    track = panel.find_element(By.CSS_SELECTOR,
+                               "span[data-orientation='horizontal']")
+    return panel, track  # track 里第一个 <span> 就是 thumb
+
+
+def ensure_bpm(value):
+    debug(f"[BPM] enter ensure_bpm({value})")
+
+    # ① 打开面板
+    try:
+        top_btn = _find_bpm_button()
+        driver.execute_script("arguments[0].click();", top_btn)
+    except Exception as e:
+        debug(f"[BPM] ❌ click top-btn: {e}")
+        return False
+
+    try:
+        panel, track = _wait_bpm_panel(top_btn)
+    except TimeoutException:
+        debug("[BPM] ❌ panel timeout")
+        return False
+
+    if str(value).lower().strip() == "auto":
+        try:
+            panel.find_element(By.XPATH,
+                ".//button[normalize-space()='重置' or normalize-space()='Reset']"
+            ).click()
+            debug("[BPM] reset -> auto")
+        finally:
+            panel.find_element(By.XPATH,
+                ".//button[normalize-space()='应用' or normalize-space()='Apply']"
+            ).click()
+        return True
+
+    bpm = max(60, min(180, int(round(float(value)))))
+
+    # ② 用 JS 改 thumb transform + aria-valuenow
+    js = """
+      const bpm   = arguments[0];
+      const track = arguments[1];
+
+      const min = parseFloat(track.getAttribute('aria-valuemin') || 60);
+      const max = parseFloat(track.getAttribute('aria-valuemax') || 180);
+      const ratio = (bpm - min) / (max - min);
+
+      const thumb = track.querySelector('span');
+      if(thumb){
+          thumb.style.setProperty('--radix-slider-thumb-transform',
+                                  `translateX(${ratio*100}%)`);
+      }
+      track.setAttribute('aria-valuenow', bpm);
+    """
+    driver.execute_script(js, bpm, track)
+    debug(f"[BPM] set to {bpm} via JS")
+
+    # ③ 点应用
+    try:
+        panel.find_element(By.XPATH,
+            ".//button[normalize-space()='应用' or normalize-space()='Apply']"
+        ).click()
+    except Exception:
+        pass
+
+    return True
+
+
+
+# ──────────── Track-Mute helpers ────────────
+_TRACK_ID_MAP = {
+    "drums": "drum-control",
+    "bass":  "bass-control",
+    "other": "other-control",
+}
+
+def _find_track_button(track: str):
+    """
+    根据 track 名 ("drums" / "bass" / "other") 找到对应按钮 <button id="drum-control">…
+    若前端改动了 id，可在 _TRACK_ID_MAP 中自行调整。
+    """
+    track = track.lower().strip()
+    btn_id = _TRACK_ID_MAP.get(track)
+    if not btn_id:
+        return None
+    try:
+        return driver.find_element(By.ID, btn_id)
+    except Exception:
+        return None
+
+def _is_btn_muted(btn) -> bool|None:
+    """
+    读取按钮当前是否为『静音』。
+    先看 aria-pressed，再兜底看 class。
+    返回 True=静音，False=未静音，None=无法判断。
+    """
+    aria = btn.get_attribute("aria-pressed")
+    if aria is not None:
+        return aria.lower() == "true"
+    cls = (btn.get_attribute("class") or "").lower()
+    if "active" in cls or "toggled" in cls or "muted" in cls:
+        return True
+    if "inactive" in cls:
+        return False
+    return None
+
+def ensure_track_mute(track: str, target_mute: bool,
+                      retry:int = 3, wait:float = 0.15) -> bool:
+    """
+    反复点击按钮直至 Drums/Bass/Other 达到目标静音状态。
+
+    track       : "drums" | "bass" | "other"
+    target_mute : True → 静音, False → 取消静音
+    """
+    btn = _find_track_button(track)
+    if not btn:
+        debug(f">*Ubiq*<找不到 track 按钮: {track}")
+        return False
+
+    for _ in range(retry):
+        cur = _is_btn_muted(btn)
+        if cur == target_mute:
+            debug(f">*Ubiq*<{track} 已是 mute={target_mute}")
+            return True
+        driver.execute_script("arguments[0].click();", btn)
+        time.sleep(wait)
+
+    debug(f">*Ubiq*<无法将 {track} 置为 mute={target_mute}")
+    return False
+# ────────────────────────────────────────────
 
 
 if __name__ == "__main__":
