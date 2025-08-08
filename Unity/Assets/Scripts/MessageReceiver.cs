@@ -1,40 +1,61 @@
-using System.Collections;
-using System.Collections.Generic;
-using Ubiq.Networking;
 using UnityEngine;
-using Ubiq.Dictionaries;
 using Ubiq.Messaging;
-using Ubiq.Logging.Utf8Json;
-using Ubiq.Rooms;
-using System;
-using System.Text;
+using Ubiq.Networking;
+using System.Collections.Generic;
 
+[RequireComponent(typeof(AudioSource))]
 public class MessageReceiver : MonoBehaviour
 {
-    private NetworkId networkId = new NetworkId(99);
-    private NetworkContext context;
+    private AudioSource source;
+    private NetworkContext ctx;
+    private readonly Queue<float> queue = new Queue<float>();
 
-    [Serializable]
-    private struct Message
-    {
-        public string data;
-    }
+    const int SampleRate = 48000;
+    const int Channels = 1;
 
-    // Start is called before the first frame update
     void Start()
     {
-        context = NetworkScene.Register(this, networkId);
+        ctx = NetworkScene.Register(this, new NetworkId(95));
+
+        source = GetComponent<AudioSource>();
+        var clip = AudioClip.Create("LiveMusic",
+                                    SampleRate,
+                                    Channels,
+                                    SampleRate,
+                                    true,
+                                    OnAudioRead);
+        source.clip = clip;
+        source.loop = true;
+        source.Play();
     }
 
-    // Update is called once per frame
-    void Update()
+    public void ProcessMessage(ReferenceCountedSceneGraphMessage msg)
     {
+        var span = msg.data;
 
+        // —— 过滤 JSON 控制包 ——
+        if (span.Length > 0 && span[0] == (byte)'{')
+        {
+            string json = System.Text.Encoding.UTF8.GetString(span);
+            Debug.Log($"[AudioInfo] {json}");
+            return;
+        }
+
+        // —— 解析 PCM ——
+        for (int i = 0; i + 1 < span.Length; i += 2)
+        {
+            short s = (short)(span[i] | (span[i + 1] << 8));
+            queue.Enqueue(s / 32768f);
+        }
     }
 
-    public void ProcessMessage(ReferenceCountedSceneGraphMessage data)
+    private void OnAudioRead(float[] buffer)
     {
-        Message message = data.FromJson<Message>();
-        Debug.Log("Message received: " + message.data);
+        int i = 0;
+        while (i < buffer.Length && queue.Count > 0)
+        {
+            buffer[i++] = queue.Dequeue();
+        }
+        for (; i < buffer.Length; i++) buffer[i] = 0f;
     }
 }

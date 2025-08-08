@@ -1,6 +1,0 @@
-1754380462.7218804: [BPM] enter ensure_bpm(128)
-1754380462.8283975: [BPM] set to 128 via JS
-1754380477.4194033: [BPM] enter ensure_bpm(176)
-1754380477.4719458: [BPM] set to 176 via JS
-1754380483.2131155: [BPM] enter ensure_bpm(60)
-1754380483.270514: [BPM] set to 60 via JS

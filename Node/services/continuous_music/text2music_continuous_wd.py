@@ -141,43 +141,24 @@ def set_volume(value):
     print(f">*Ubiq*<Volume factor set to: {volume_factor}")
 
 
-
 def generate_music_from_prompt(data, chunk_counter):
     global volume_factor
     audio_data = np.frombuffer(data, dtype=np.int16)
     volume = np.sqrt(np.mean(np.abs(audio_data ** 2)))
 
-
-
-    # if chunk_counter % 450 == 0:  # 每秒1次能量打印（避免刷屏卡顿）
-    #     sys.stderr.write(f"[Energy] {volume:.1f}\n")
-
     if volume > THRESHOLD:
-        # ① 重采样到 48 kHz
-        resampled_audio_data = scipy.signal.resample(audio_data* volume_factor, int(len(audio_data) * (48000 / 96000))).astype(np.int16)
-        # TBD
-        # sys.stdout.buffer.write(np.int16(resampled_audio_data))
-        # ② 把 numpy 转原始 bytes
-        pcm_bytes = resampled_audio_data.tobytes()
+        resampled_audio_data = scipy.signal.resample(audio_data, int(len(audio_data) * (48000 / 96000)))
+        sys.stdout.buffer.write(np.int16(resampled_audio_data))
+        
 
-        # ③ 先发一个 JSON 头（一次 clip 发一次即可；此处简单每帧都发）
-        # send_audio_header(len(pcm_bytes))
-
-        # # ④ 按 16 000 B 切包输出到 stdout，Node 直接读取
-        # PACK = 16_000
-        # for i in range(0, len(pcm_bytes), PACK):
-        #     chunk = pcm_bytes[i:i+PACK]
-        #     sys.stdout.buffer.write(chunk)
-        #     sys.stdout.buffer.flush()
-
-def send_audio_header(total_bytes: int):
-    hdr = {
-        "type": "AudioInfo",
-        "targetPeer": "Music Service",
-        "audioLength": total_bytes
-    }
-    sys.stdout.write(json.dumps(hdr) + "\n")    # 仍走 stdout（文本）
-    sys.stdout.flush()
+# def send_audio_header(total_bytes: int):
+#     hdr = {
+#         "type": "AudioInfo",
+#         "targetPeer": "Music Service",
+#         "audioLength": total_bytes
+#     }
+#     sys.stdout.write(json.dumps(hdr) + "\n")    # 仍走 stdout（文本）
+#     sys.stdout.flush()
 
 
 def recognize_from_file():

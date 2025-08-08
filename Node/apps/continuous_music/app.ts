@@ -441,29 +441,30 @@ export class ContinuousMusicAgent extends ApplicationController {
 
 
 
-        // TBD
-        // this.components.musicGenerationService?.on('data', (data: Buffer, identifier: string) => {
-        //     let response = data;
-        //     //console.log('Received TTS response from child process ' + identifier);
+        // Background
+        this.components.musicGenerationService?.on('data', (data: Buffer, identifier: string) => {
+            let response = data;
+            //console.log('Received TTS response from child process ' + identifier);
             
-        //     const debug = data.toString();
-        //     if (debug.startsWith(">*Ubiq*<")){
-        //         console.log('Response: ' + debug);
-        //         return;
-        //     }
+            const debug = data.toString();
+            if (debug.startsWith(">*Ubiq*<")){
+                console.log('Response: ' + debug);
+                return;
+            }
 
-        //     this.scene.send(new NetworkId(99), {
-        //         type: 'AudioInfo',
-        //         targetPeer: "Music Service",
-        //         audioLength: data.length,
-        //     });
+            this.scene.send(new NetworkId(99), {
+                type: 'AudioInfo',
+                // targetPeer: this.targetPeer,
+                targetPeer: "Music Service",
+                audioLength: data.length,
+            });
             
-        //     while (response.length > 0) {
-        //         //console.log('Response length: ' + response.length + ' bytes');
-        //         this.scene.send(new NetworkId(99), response.slice(0, 16000));
-        //         response = response.slice(16000);
-        //     }
-        // });
+            while (response.length > 0) {
+                // console.log('Response length: ' + response.length + ' bytes');
+                this.scene.send(new NetworkId(95), response.slice(0, 16000));
+                response = response.slice(16000);
+            }
+        });
     }
 
     sendPromptMapToUnity(
@@ -484,8 +485,6 @@ export class ContinuousMusicAgent extends ApplicationController {
         //     JSON.stringify(payload, null, 2)
         // );
     }
-
-
 
 
     printPromptMap() {
