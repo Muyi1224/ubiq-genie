@@ -17,6 +17,8 @@ GameObject:
   - component: {fileID: 3325344339982641821}
   - component: {fileID: 864827394634189167}
   - component: {fileID: -3858805847384372255}
+  - component: {fileID: -5251647844670535811}
+  - component: {fileID: 2965015160876481582}
   m_Layer: 0
   m_Name: fireball
   m_TagString: Untagged
@@ -153,7 +155,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_InteractionManager: {fileID: 0}
-  m_Colliders: []
+  m_Colliders:
+  - {fileID: 1396693079266512737}
   m_InteractionLayers:
     m_Bits: 1
   m_DistanceCalculationMode: 1
@@ -259,8 +262,9 @@ MonoBehaviour:
   m_ForceGravityOnDetach: 0
   m_RetainTransformParent: 1
   m_StartingSingleGrabTransformers: []
-  m_StartingMultipleGrabTransformers: []
-  m_AddDefaultGrabTransformers: 1
+  m_StartingMultipleGrabTransformers:
+  - {fileID: -5251647844670535811}
+  m_AddDefaultGrabTransformers: 0
   m_FarAttachMode: 0
 --- !u!114 &3325344339982641821
 MonoBehaviour:
@@ -289,6 +293,7 @@ MonoBehaviour:
   objectName: 
   description: 
   objectId: 
+  debounceSeconds: 1
 --- !u!114 &-3858805847384372255
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -303,3 +308,41 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   infoPanelPrefab: {fileID: 7925474778327363041, guid: b68030664e144054ca988f19b397d612, type: 3}
   panelOffset: {x: 2, y: 0, z: 0}
+--- !u!114 &-5251647844670535811
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5906112520879447989}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d0a1302d0d134fa8a2a5b3bf4aec3c20, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_PermittedDisplacementAxes: -1
+  m_ConstrainedAxisDisplacementMode: 1
+  m_TwoHandedRotationMode: 1
+  m_AllowOneHandedScaling: 0
+  m_AllowTwoHandedScaling: 1
+  m_OneHandedScaleSpeed: 0.5
+  m_ThresholdMoveRatioForScale: 0.05
+  m_ClampScaling: 1
+  m_MinimumScaleRatio: 0.25
+  m_MaximumScaleRatio: 2
+  m_ScaleMultiplier: 0.25
+--- !u!114 &2965015160876481582
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5906112520879447989}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f0a22722f40f4424a864c65a9ce428e1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  minScale: 0.1
+  maxScale: 3
+  smooth: 12

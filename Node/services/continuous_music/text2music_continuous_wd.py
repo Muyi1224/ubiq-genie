@@ -97,7 +97,7 @@ def ui_loop(prompts):
 
             # Locate delete buttons
             delete_buttons = driver.find_elements(By.CSS_SELECTOR, "button.deleteButton")
-            if len(delete_buttons) > 3:  # Ensure at least 3 prompts remain
+            if len(delete_buttons) > 9:  # Ensure at least 9 prompts remain
                 driver.execute_script("arguments[0].click();", delete_buttons[0])
                 print(f">*Ubiq*<Clicked the first delete button.")
         except Exception as e:
@@ -149,16 +149,6 @@ def generate_music_from_prompt(data, chunk_counter):
     if volume > THRESHOLD:
         resampled_audio_data = scipy.signal.resample(audio_data, int(len(audio_data) * (48000 / 96000)))
         sys.stdout.buffer.write(np.int16(resampled_audio_data))
-        
-
-# def send_audio_header(total_bytes: int):
-#     hdr = {
-#         "type": "AudioInfo",
-#         "targetPeer": "Music Service",
-#         "audioLength": total_bytes
-#     }
-#     sys.stdout.write(json.dumps(hdr) + "\n")    # 仍走 stdout（文本）
-#     sys.stdout.flush()
 
 
 def recognize_from_file():

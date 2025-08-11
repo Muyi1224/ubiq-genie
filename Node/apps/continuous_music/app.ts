@@ -85,6 +85,7 @@ export class ContinuousMusicAgent extends ApplicationController {
 
     definePipeline() {
         // Step 1: When we receive audio data from a peer we send it to the transcription service and recording service
+        // this.components.mediaReceiver?.on('audio', (uuid: string, data: RTCAudioData) => {
         this.components.mediaReceiver?.on('audio', (uuid: string, data: RTCAudioData) => {
             // Convert the Int16Array to a Buffer
             const sampleBuffer = Buffer.from(data.samples.buffer);
@@ -442,29 +443,88 @@ export class ContinuousMusicAgent extends ApplicationController {
 
 
         // Background
-        this.components.musicGenerationService?.on('data', (data: Buffer, identifier: string) => {
-            let response = data;
-            //console.log('Received TTS response from child process ' + identifier);
+        // this.components.musicGenerationService?.on('data', (data: Buffer, identifier: string) => {
+        //     let response = data;
+        //     //console.log('Received TTS response from child process ' + identifier);
             
-            const debug = data.toString();
-            if (debug.startsWith(">*Ubiq*<")){
-                console.log('Response: ' + debug);
+        //     const debug = data.toString();
+        //     if (debug.startsWith(">*Ubiq*")){
+        //         console.log('Response: ' + debug);
+        //         return;
+        //     }
+
+        //     this.scene.send(new NetworkId(95), {
+        //         type: 'AudioInfo',
+        //         // targetPeer: this.targetPeer,
+        //         targetPeer: "Music Service",
+        //         audioLength: data.length,
+        //     });
+            
+        //     // while (response.length > 0) {
+        //     //     // console.log('Response length: ' + response.length + ' bytes');
+        //     //     this.scene.send(new NetworkId(95), response.slice(0, 16000));
+        //     //     response = response.slice(16000);
+        //     // }
+
+        //     while (response.length > 0) {
+        //     const chunk = response.slice(0, 16000);
+
+        //     console.log(
+        //     `Sending chunk: length=${chunk.length}, headBytes=[${chunk.subarray(0,4).join(', ')}]`
+        //     );
+
+        //     this.scene.send(new NetworkId(95), chunk);
+        //     response = response.slice(16000);
+        // }
+
+        // });
+        this.components.musicGenerationService?.on("data", (data: Buffer) => {
+            const text = data.toString();
+
+            // 1) 拦截控制消息
+            if (text.startsWith(">*Ubiq*")) {
+                console.log("Response:", text);
                 return;
             }
 
-            this.scene.send(new NetworkId(99), {
-                type: 'AudioInfo',
-                // targetPeer: this.targetPeer,
-                targetPeer: "Music Service",
-                audioLength: data.length,
-            });
+            // 2) 如果整个 data 就只有 2 字节且是 [13,10]，直接丢弃
+            if (data.length === 2 && data[0] === 13 && data[1] === 10) {
+                console.log("Skip lone CRLF chunk");
+                return;
+            }
+
+            // 3) 真正发送 PCM
+            let rest = data;
+
+            // —— 如果最后尾巴是 CRLF，把它剪掉 ——  
+            if (
+                rest.length >= 2 &&
+                rest[rest.length - 2] === 13 &&
+                rest[rest.length - 1] === 10
+            ) {
+                rest = rest.subarray(0, rest.length - 2);
+            }
             
-            while (response.length > 0) {
-                // console.log('Response length: ' + response.length + ' bytes');
-                this.scene.send(new NetworkId(95), response.slice(0, 16000));
-                response = response.slice(16000);
+
+            const MIN_CHUNK = 2048;
+            const CHUNK = 16000;
+
+            while (rest.length > 0) {
+                const chunk = rest.subarray(0, CHUNK);
+                rest = rest.subarray(CHUNK);
+
+                if (chunk.length < MIN_CHUNK) {
+                    console.log(`Skip small chunk: len=${chunk.length}`);
+                    continue;
+                }
+
+                console.log(
+                    `Sending chunk: len=${chunk.length}, head=[${chunk.subarray(0, 4).join(",")}]`
+                );
+                this.scene.send(new NetworkId(95), chunk);
             }
         });
+
     }
 
     sendPromptMapToUnity(

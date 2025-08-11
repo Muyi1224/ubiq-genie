@@ -58,7 +58,13 @@ public class SyncTransformOnChange : MonoBehaviour
 
         grab = GetComponent<XRGrabInteractable>();
         grab.selectEntered.AddListener(_ => CacheTransform());
-        grab.selectExited.AddListener(_ => SyncIfChanged());
+        //grab.selectExited.AddListener(_ => SyncIfChanged());
+        grab.selectExited.AddListener(args =>
+        {
+            // 只有完全无人抓着时再同步，避免双手中途松一只就发送
+            if (!grab.isSelected) SyncIfChanged();
+        });
+
 
         CacheTransform();
     }
@@ -120,8 +126,8 @@ public class SyncTransformOnChange : MonoBehaviour
             objectId = objectId,
             objectName = objectName,
             description = description,          // 已是新描述
-            position = transform.position,
-            rotation = transform.eulerAngles,
+            //position = transform.position,
+            //rotation = transform.eulerAngles,
             scale = transform.localScale,
             type = "add"
         };
@@ -132,26 +138,23 @@ public class SyncTransformOnChange : MonoBehaviour
     /* ---------------- 同步 transform ---------------- */
     public void SyncIfChanged()
     {
-        if (transform.position != lastPos ||
-            transform.eulerAngles != lastRot ||
-            transform.localScale != lastScale)
+        if (transform.localScale != lastScale)
         {
-            transform.localScale += Vector3.one * 0.1f;
+            //transform.localScale += Vector3.one * 0.1f;
 
             var msg = new SpawnMessage
             {
                 objectId = objectId,
                 objectName = objectName,
                 description = description,
-                position = transform.position,
-                rotation = transform.eulerAngles,
+                //position = transform.position,
+                //rotation = transform.eulerAngles,
                 scale = transform.localScale,
                 type = hasSentTransform ? "scale" : "add"
             };
             context.SendJson(msg);
 
             Debug.Log($"[SyncTransform] Sent ({msg.type})  " +
-                  $"id:{msg.objectId}  pos:{msg.position}  " +
                   $"rot:{msg.rotation}  scale:{msg.scale}");
 
             hasSentTransform = true;

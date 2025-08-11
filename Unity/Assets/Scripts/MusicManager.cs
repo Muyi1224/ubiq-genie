@@ -12,7 +12,7 @@ using System.Text;
 
 public class MusicManager : MonoBehaviour
 {
-    private NetworkId networkId = new NetworkId(102);
+    private NetworkId networkId = new NetworkId(99);
     private NetworkContext context;
 
     // ≡≡ 用于重组音频 ========================================================
