@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: 613c96018fcfaf749a07c10ca69b73e2
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {fileID: 2800000, guid: 7494127e4ca0d1d4fbad50a50371b8b6, type: 3}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 188051
+  packageName: Ultimate Radial Submenu (Add-on)
+  packageVersion: 1.1.0
+  assetPath: Assets/Tank & Healer Studio/Ultimate Radial Submenu/Editor/UltimateRadialSubmenuReadmeEditor.cs
+  uploadId: 741753

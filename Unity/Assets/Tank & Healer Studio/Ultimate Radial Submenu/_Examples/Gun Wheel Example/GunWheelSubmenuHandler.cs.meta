@@ -1,0 +1,19 @@
+fileFormatVersion: 2
+guid: f4972424fd94ae54f8de771869687e4a
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 188051
+  packageName: Ultimate Radial Submenu (Add-on)
+  packageVersion: 1.1.0
+  assetPath: Assets/Tank & Healer Studio/Ultimate Radial Submenu/_Examples/Gun Wheel
+    Example/GunWheelSubmenuHandler.cs
+  uploadId: 741753
