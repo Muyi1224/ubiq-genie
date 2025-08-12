@@ -4,35 +4,23 @@ using UnityEngine.InputSystem;
 public class ToggleRadialMenu : MonoBehaviour
 {
     [Header("要显示/隐藏的菜单根")]
-    public GameObject radialMenuRoot;        // 指向 Canvas 或 Ultimate Radial Menu
+    public GameObject radialMenuRoot;
 
     [Header("（可选）引用现有 InputAction")]
-    public InputActionReference toggleAction; // 可以留空：留空时用代码绑定左手X键
+    public InputActionReference toggleAction; // 不填则默认 LeftHand/X
+
+    [Header("左手与摆放")]
+    public Transform leftHand;                       // XR 左手控制器/锚点
+    public Vector3 handLocalOffset = new Vector3(-0.05f, 0.07f, 0.12f); // 相对左手的本地方向偏移(左、上、前)
+    public bool followLeftHand = true;               // 是否跟随
+    public bool faceHmd = true;                      // 是否始终朝向HMD
+    public float followLerp = 12f;                   // 平滑系数
 
     [Header("编辑器调试键")]
     public Key debugKey = Key.M;
 
-    private InputAction _runtimeAction;   // 代码里创建的 Action
-    private InputAction _activeAction;    // 实际在用的 Action（引用或运行时创建）
-
-    void Start()
-    {
-        Debug.Log($"[TRM] Start, root={(radialMenuRoot ? radialMenuRoot.name : "NULL")}");
-        if (!radialMenuRoot) return;
-
-        // 1) 强制显示
-        radialMenuRoot.SetActive(true);
-
-        // 2) 丢到相机正前方 0.6m，并面向相机
-        var cam = Camera.main;
-        if (cam)
-        {
-            radialMenuRoot.transform.position = cam.transform.position + cam.transform.forward * 0.6f;
-            radialMenuRoot.transform.rotation = Quaternion.LookRotation(cam.transform.forward, Vector3.up);
-        }
-        Debug.Log($"[TRM] root active={radialMenuRoot.activeSelf}, pos={radialMenuRoot.transform.position}");
-    }
-
+    private InputAction _runtimeAction;
+    private InputAction _activeAction;
 
     void Awake()
     {
@@ -40,23 +28,26 @@ public class ToggleRadialMenu : MonoBehaviour
         else radialMenuRoot.SetActive(false);
     }
 
+    void Start()
+    {
+        if (!radialMenuRoot) return;
+        // 初次摆个大概位置，避免(0,0,0)
+        var cam = Camera.main;
+        if (cam)
+        {
+            radialMenuRoot.transform.position = cam.transform.position + cam.transform.forward * 0.6f;
+            radialMenuRoot.transform.rotation = Quaternion.LookRotation(cam.transform.forward, Vector3.up);
+        }
+    }
+
     void OnEnable()
     {
-        Debug.Log("[TRM] OnEnable");
-        // 1) 优先用 Inspector 里传入的引用
         if (toggleAction != null && toggleAction.action != null)
-        {
             _activeAction = toggleAction.action;
-        }
         else
         {
-            // 2) 否则代码里创建：左手 X（primaryButton），带 Press 交互
-            _runtimeAction = new InputAction(
-                name: "ToggleRadialMenu",
-                type: InputActionType.Button
-            );
-            _runtimeAction.AddBinding("<XRController>{LeftHand}/primaryButton")
-                          .WithInteraction("press(pressPoint=0.5)");
+            _runtimeAction = new InputAction("ToggleRadialMenu", InputActionType.Button);
+            _runtimeAction.AddBinding("<XRController>{LeftHand}/primaryButton").WithInteraction("press(pressPoint=0.5)");
             _runtimeAction.Enable();
             _activeAction = _runtimeAction;
         }
@@ -76,27 +67,51 @@ public class ToggleRadialMenu : MonoBehaviour
 
     void Update()
     {
+        // 编辑器键盘调试
         if (debugKey != Key.None && Keyboard.current != null &&
             Keyboard.current[debugKey].wasPressedThisFrame)
-        {
             Toggle();
+
+        if (radialMenuRoot && radialMenuRoot.activeSelf)
+        {
+            if (followLeftHand) FollowLeftHand();
+            else if (faceHmd) FaceCamera();
         }
-
-        if (radialMenuRoot && radialMenuRoot.activeSelf) FaceCamera();
     }
 
-    void OnToggle(InputAction.CallbackContext _)
-    {
-        Debug.Log("[ToggleRadialMenu] toggle by input");
-        Toggle();
-    }
+    void OnToggle(InputAction.CallbackContext _) => Toggle();
 
     void Toggle()
     {
         if (!radialMenuRoot) return;
         radialMenuRoot.SetActive(!radialMenuRoot.activeSelf);
-        Debug.Log($"[TRM] Toggle() => {radialMenuRoot.activeSelf}");
-        if (radialMenuRoot.activeSelf) FaceCamera();
+        if (radialMenuRoot.activeSelf)
+        {
+            // 切换到显示时立刻摆放一次
+            if (followLeftHand) SnapToLeftHand();
+            if (faceHmd) FaceCamera();
+        }
+    }
+
+    void SnapToLeftHand()
+    {
+        if (!leftHand || !radialMenuRoot) return;
+        radialMenuRoot.transform.position = leftHand.TransformPoint(handLocalOffset);
+    }
+
+    void FollowLeftHand()
+    {
+        if (!leftHand || !radialMenuRoot) return;
+
+        // 位置平滑到左手的偏移点
+        Vector3 targetPos = leftHand.TransformPoint(handLocalOffset);
+        radialMenuRoot.transform.position = Vector3.Lerp(
+            radialMenuRoot.transform.position, targetPos, Time.deltaTime * followLerp);
+
+        // 始终朝向头显，阅读更稳定
+        if (faceHmd) FaceCamera();
+        else radialMenuRoot.transform.rotation =
+                 Quaternion.LookRotation(leftHand.forward, Vector3.up);
     }
 
     void FaceCamera()
