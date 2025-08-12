@@ -155,7 +155,7 @@ public class SyncTransformOnChange : MonoBehaviour
             context.SendJson(msg);
 
             Debug.Log($"[SyncTransform] Sent ({msg.type})  " +
-                  $"rot:{msg.rotation}  scale:{msg.scale}");
+                  $" des:{msg.description}  scale:{msg.scale}");
 
             hasSentTransform = true;
             CacheTransform();

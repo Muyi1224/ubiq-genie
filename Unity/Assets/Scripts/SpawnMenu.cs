@@ -375,6 +375,21 @@ public class SpawnMenu : MonoBehaviour
         return "No associated prompt"; // 如果没找到，返回默认文本
     }
 
+    public void SpawnFromPrefab(GameObject prefab)
+    {
+        if (!prefab) return;
+
+        // 在 spawnableItems 里找到和这个 prefab 一样的那一项
+        var item = spawnableItems.FirstOrDefault(i => i.prefab == prefab);
+
+        // 如果找到了，就用它的 name / description，否则用 prefab 自带的名字
+        string objName = item != null ? item.name : prefab.name;
+        string desc = item != null ? item.description : "";
+
+        SpawnObject(prefab, objName, desc);
+    }
+
+
     public void SpawnByName(string name, Vector3? position = null)
     {
         Debug.Log("Spawn by name: " + name);
