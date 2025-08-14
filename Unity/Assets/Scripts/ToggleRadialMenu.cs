@@ -11,7 +11,8 @@ public class ToggleRadialMenu : MonoBehaviour
 
     [Header("左手与摆放")]
     public Transform leftHand;                       // XR 左手控制器/锚点
-    public Vector3 handLocalOffset = new Vector3(-0.05f, 0.07f, 0.12f); // 相对左手的本地方向偏移(左、上、前)
+    //public Vector3 handLocalOffset = new Vector3(-0.05f, 0.07f, 0.12f); // 相对左手的本地方向偏移(左、上、前)
+    public Vector3 handLocalOffset = new Vector3(-0.03f, 0.08f, 0.18f);
     public bool followLeftHand = true;               // 是否跟随
     public bool faceHmd = true;                      // 是否始终朝向HMD
     public float followLerp = 12f;                   // 平滑系数
