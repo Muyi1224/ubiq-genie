@@ -156,10 +156,10 @@ public class MessageReceiver : MonoBehaviour
             {
                 if (hasPlaybackStarted)
                 {
-                    Debug.Log($"缓冲区状态 - 队列大小: {queue.Count}, " +
-                             $"接收样本: {totalSamplesReceived}, " +
-                             $"播放样本: {totalSamplesPlayed}, " +
-                             $"欠载次数: {underrunCount}");
+                    //Debug.Log($"缓冲区状态 - 队列大小: {queue.Count}, " +
+                    //         $"接收样本: {totalSamplesReceived}, " +
+                    //         $"播放样本: {totalSamplesPlayed}, " +
+                    //         $"欠载次数: {underrunCount}");
                 }
             }
         }

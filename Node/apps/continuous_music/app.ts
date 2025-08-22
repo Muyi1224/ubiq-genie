@@ -292,6 +292,16 @@ export class ContinuousMusicAgent extends ApplicationController {
                 return;
             }
 
+            if (selectionData.type === "key") {
+                const msg = { type: "key", value: selectionData.value };  // 例: "C maj / A min"
+                this.components.musicGenerationService?.sendToChildProcess(
+                    "default",
+                    JSON.stringify(msg) + "\n"
+                );
+                // console.log(`◎ Sent key change → ${selectionData.value}`);
+                return;
+            }
+
         });
 
         // === Delete message from Unity =============================================
@@ -518,9 +528,9 @@ export class ContinuousMusicAgent extends ApplicationController {
                     continue;
                 }
 
-                console.log(
-                    `Sending chunk: len=${chunk.length}, head=[${chunk.subarray(0, 4).join(",")}]`
-                );
+                // console.log(
+                //     `Sending chunk: len=${chunk.length}, head=[${chunk.subarray(0, 4).join(",")}]`
+                // );
                 this.scene.send(new NetworkId(95), chunk);
             }
         });

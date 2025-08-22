@@ -350,9 +350,11 @@ def listen_from_node():
                 target = bool(msg.get("mute"))                 # True=静音
                 if track in ("drums", "bass", "other"):
                     ensure_track_mute(track, target)
-
-
-
+            
+            elif mtype == "key":
+                val = (msg.get("value") or "").strip()
+                if val:
+                    ensure_key(val)
 
         except Exception as e:
             print(f"[From Node] JSON error: {e}")
@@ -647,13 +649,13 @@ def ensure_bpm(value):
         top_btn = _find_bpm_button()
         driver.execute_script("arguments[0].click();", top_btn)
     except Exception as e:
-        debug(f"[BPM] ❌ click top-btn: {e}")
+        debug(f"[BPM]  click top-btn: {e}")
         return False
 
     try:
         panel, track = _wait_bpm_panel(top_btn)
     except TimeoutException:
-        debug("[BPM] ❌ panel timeout")
+        debug("[BPM]  panel timeout")
         return False
 
     if str(value).lower().strip() == "auto":
@@ -696,10 +698,182 @@ def ensure_bpm(value):
         ).click()
     except Exception:
         pass
-
     return True
 
 
+def _find_key_button(timeout=3):
+    """
+    在没有 <small> 文本的情况下，按结构锁定 Key 按钮：
+    1) 直接找含“键/Key/maj/min”的按钮（有些版本有文本）
+    2) 找到 BPM 按钮后，取它的“同一行的另一个” aria-haspopup=dialog 按钮
+    3) 最后兜底：BPM 后第一个 following 的 dialog 按钮
+    返回可点击的 WebElement 或 None
+    """
+    # ① 直接根据文本命中（如果有）
+    XPATHS = [
+        "//button[@aria-haspopup='dialog' and contains(normalize-space(.),'键')]",
+        "//button[@aria-haspopup='dialog' and contains(normalize-space(.),'Key')]",
+        "//button[@aria-haspopup='dialog' and (.//*[contains(normalize-space(),'maj') or contains(normalize-space(),'min')]"
+        " or contains(normalize-space(.),'maj') or contains(normalize-space(.),'min'))]",
+    ]
+    for xp in XPATHS:
+        try:
+            return WebDriverWait(driver, timeout).until(
+                EC.element_to_be_clickable((By.XPATH, xp))
+            )
+        except Exception:
+            pass
+
+    # ② 与 BPM 同一行（同一父级）另外一个 dialog 按钮
+    try:
+        bpm = WebDriverWait(driver, 3).until(
+            EC.presence_of_element_located(
+                (By.XPATH, "//button[@aria-haspopup='dialog' and .//small[normalize-space()='BPM']]")
+            )
+        )
+        # 升到最近一层容器再找兄弟按钮（你截图里两者同一层）
+        row = bpm.find_element(By.XPATH, "./..")
+        siblings = [b for b in row.find_elements(By.XPATH, ".//button[@aria-haspopup='dialog']") if b.is_displayed()]
+        if len(siblings) >= 2:
+            # 过滤掉 BPM 本人，拿另一个
+            for b in siblings:
+                if "BPM" not in (b.text or ""):
+                    return b
+    except Exception:
+        pass
+
+    # ③ 兜底：BPM 之后的第一个 dialog 按钮
+    try:
+        sib = driver.find_element(By.XPATH, "//button[@aria-haspopup='dialog' and .//small[normalize-space()='BPM']]/following::button[@aria-haspopup='dialog'][1]")
+        if sib.is_displayed():
+            return sib
+    except Exception:
+        pass
+
+    return None
+
+def _wait_key_panel(btn, timeout=5):
+    """
+    完全照搬 BPM：有 aria-controls 就按 ID 等待；
+    没有就退回找最近出现的可见 listbox/dialog 弹层。
+    """
+    pid = btn.get_attribute("aria-controls")
+    if pid:
+        return WebDriverWait(driver, timeout).until(
+            EC.visibility_of_element_located((By.ID, pid))
+        )
+
+    # 兜底：找一个可见的 listbox/dialog（Radix 常用）
+    return WebDriverWait(driver, timeout).until(
+        EC.visibility_of_element_located((
+            By.XPATH,
+            "//*[(@role='listbox' or @role='dialog' or starts-with(@id,'radix-')) and not(@aria-hidden='true')]"
+        ))
+    )
+
+
+def ensure_key(value: str):
+    """
+    打开 Key 面板 -> 点开内部 combobox -> 在 listbox 里选择目标项 -> 如有“应用/Apply”则点击。
+    value 例：'C maj / A min' 或 'Auto'/'自动'
+    """
+    label = (value or "").strip()
+    debug(f"[KEY] enter ensure_key({label})")
+    if not label:
+        return False
+
+    # 1) 打开顶部 Key 按钮
+    try:
+        key_btn = _find_key_button(timeout=5)
+        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", key_btn)
+        driver.execute_script("arguments[0].click();", key_btn)
+    except Exception as e:
+        debug(f"[KEY] click key button failed: {e}")
+        return False
+
+    # 2) 等外层 dialog 可见
+    try:
+        panel = _wait_key_panel(key_btn, timeout=6)
+        if not panel:
+            debug("[KEY] panel not found after click")
+            return False
+    except TimeoutException:
+        debug("[KEY] panel timeout")
+        return False
+
+    # “Auto/自动”直接走重置按钮
+    if label.lower() in ("auto", "自动"):
+        try:
+            try:
+                reset_btn = panel.find_element(By.XPATH, ".//button[normalize-space()='重置' or normalize-space()='Reset']")
+                driver.execute_script("arguments[0].click();", reset_btn)
+            finally:
+                apply_btn = panel.find_element(By.XPATH, ".//button[normalize-space()='应用' or normalize-space()='Apply']")
+                driver.execute_script("arguments[0].click();", apply_btn)
+            return True
+        except Exception as e:
+            debug(f"[KEY] reset->apply failed: {e}")
+            # 继续往下也无意义
+            return False
+
+    # 3) 在 dialog 里找到 combobox，点开以渲染真正的 listbox
+    try:
+        combo = panel.find_element(By.XPATH, ".//button[@role='combobox' and @aria-controls]")
+        lb_id = combo.get_attribute("aria-controls")
+        driver.execute_script("arguments[0].click();", combo)
+
+        # 等 listbox 出现（注意 listbox 可能挂在 body 下的 Portal）
+        listbox = WebDriverWait(driver, 6).until(
+            EC.visibility_of_element_located((By.ID, lb_id))
+        )
+    except Exception as e:
+        debug(f"[KEY] open combobox/listbox failed: {e}")
+        return False
+
+    # 4) 在 listbox 中选择目标项
+    normA = label
+    normB = label.replace(" / ", "/")
+    try:
+        try:
+            opt = listbox.find_element(
+                By.XPATH,
+                f".//*[(normalize-space(text())='{normA}') or (normalize-space(text())='{normB}')]"
+            )
+        except Exception:
+            opt = listbox.find_element(
+                By.XPATH,
+                f".//*[contains(normalize-space(.), '{normA}') or contains(normalize-space(.), '{normB}')]"
+            )
+        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", opt)
+        driver.execute_script("arguments[0].click();", opt)
+    except Exception:
+        # JS 兜底（限定在当前 listbox 内）
+        js_pick = r"""
+          const root = arguments[0];
+          const label = String(arguments[1]||'').trim();
+          const norm  = s => String(s||'').replace(/\s+/g,' ').replace(' / ','/').trim();
+          const isVis = el => !!(el && el.getClientRects().length);
+
+          const nodes = [...root.querySelectorAll('[role=option],button,div,span')].filter(isVis);
+          let el = nodes.find(e => norm(e.textContent) === norm(label));
+          if(!el) el = nodes.find(e => norm(e.textContent).includes(norm(label)));
+          if(!el) return 'no option';
+          el.scrollIntoView({block:'center'}); el.click();
+          return 'ok';
+        """
+        res = driver.execute_script(js_pick, listbox, label)
+        debug(f"[KEY] js-pick in listbox '{label}' -> {res}")
+        if res != "ok":
+            return False
+
+    # 5) 点“应用/Apply”（如果存在）
+    try:
+        apply_btn = panel.find_element(By.XPATH, ".//button[normalize-space()='应用' or normalize-space()='Apply']")
+        driver.execute_script("arguments[0].click();", apply_btn)
+    except Exception:
+        pass
+
+    return True
 
 # ──────────── Track-Mute helpers ────────────
 _TRACK_ID_MAP = {
@@ -777,7 +951,8 @@ if __name__ == "__main__":
     chrome_options.add_argument("--mute-audio")
 
     # service = Service("D:/Applications/chromedriver-win64/chromedriver.exe")
-    chromedriver_path = Path("D:/Google Download/chromedriver-win64/chromedriver-win64/chromedriver.exe")
+    # chromedriver_path = Path("D:/Google Download/chromedriver-win64/chromedriver-win64/chromedriver.exe")
+    chromedriver_path = Path("D:/chromedriver-win64/chromedriver.exe")
     service = Service(str(chromedriver_path))
 
     driver = webdriver.Chrome(service=service, options=chrome_options)
