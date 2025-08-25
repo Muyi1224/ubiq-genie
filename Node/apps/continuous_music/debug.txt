@@ -1,5 +1,0 @@
-1755902432.704509: [BPM] enter ensure_bpm(68)
-1755902432.772827: [BPM] set to 68 via JS
-1755902438.6055543: [BPM] enter ensure_bpm(60)
-1755902438.703391: [BPM] set to 60 via JS
-1755902463.0243585: [KEY] enter ensure_key(D maj / B min)
