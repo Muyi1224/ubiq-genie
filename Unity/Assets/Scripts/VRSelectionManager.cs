@@ -7,8 +7,8 @@ public class VRSelectionManager : MonoBehaviour
     public static VRSelectionManager Instance { get; private set; }
 
     [Header("Ray source (pick ONE)")]
-    public XRRayInteractor rightRay;   // 有就拖这个
-    public Transform rightAim;         // 没有就拖右手控制器 Transform
+    public XRRayInteractor rightRay;
+    public Transform rightAim;
 
     [Header("Ray settings (for rightAim fallback)")]
     public float rayLength = 25f;
@@ -16,30 +16,27 @@ public class VRSelectionManager : MonoBehaviour
 
     [Header("Selection visuals")]
     public Color highlightColor = new Color(0f, 1f, 1f, 0.75f);
-    public bool usePropertyBlock = true;        // 用 MPB 高亮，避免实例化材质
-    public GameObject selectionMarkerPrefab;    // 可选：选中标记
+    public bool usePropertyBlock = true;
+    public GameObject selectionMarkerPrefab;
 
-    // 新增字段
     [Header("Emission tweak")]
-    [Min(0f)] public float emissionIntensity = 3f; // 高亮强度，试 3~8
-    static readonly int EmissionColorId = Shader.PropertyToID("_EmissionColor");    // URP/BiRP
-    static readonly int EmissiveColorHDRPId = Shader.PropertyToID("_EmissiveColor"); // HDRP
+    [Min(0f)] public float emissionIntensity = 3f;
+    static readonly int EmissionColorId = Shader.PropertyToID("_EmissionColor");
+    static readonly int EmissiveColorHDRPId = Shader.PropertyToID("_EmissiveColor");
 
     Renderer _current;
     GameObject _marker;
     MaterialPropertyBlock _mpb;
 
-    // 加到字段区
     [Header("Outline")]
-    public Material outlineMaterial;   // 这里拖你做好的“描边材质”
-    public bool outlineAffectChildren = true; // 选中时连子Renderer一起描边（可选）
+    public Material outlineMaterial;
+    public bool outlineAffectChildren = true;
 
-    // 缓存原始材质，便于还原
     readonly System.Collections.Generic.Dictionary<Renderer, Material[]> _originalMats
         = new System.Collections.Generic.Dictionary<Renderer, Material[]>();
 
-    // 如果模型由多个 Renderer 组成，统一处理
-    System.Collections.Generic.List<Renderer> _activeGroup = new System.Collections.Generic.List<Renderer>();
+    System.Collections.Generic.List<Renderer> _activeGroup
+        = new System.Collections.Generic.List<Renderer>();
 
     public Renderer Current => _current;
     public bool HasSelection => _current != null;
@@ -50,7 +47,7 @@ public class VRSelectionManager : MonoBehaviour
         _mpb = new MaterialPropertyBlock();
     }
 
-    // —— 供“选中键”调用：从射线下取目标，命中则选中，否则清空
+    // —— 供“选中键”调用
     public void SelectUnderRay()
     {
         if (TryGetHit(out var hit))
@@ -60,7 +57,6 @@ public class VRSelectionManager : MonoBehaviour
     }
 
     public void ClearSelection() => SetCurrent(null);
-
 
     public void ApplyMaterialToSelection(Material mat)
     {
@@ -74,7 +70,7 @@ public class VRSelectionManager : MonoBehaviour
         {
             if (!r) continue;
 
-            // 取缓存，如果没缓存就用当前的 sharedMaterials 去掉 outline
+            // 取缓存（不带描边）
             Material[] baseMats;
             if (_originalMats.TryGetValue(r, out var cached))
             {
@@ -94,10 +90,10 @@ public class VRSelectionManager : MonoBehaviour
             for (int i = 0; i < baseMats.Length; i++)
                 baseMats[i] = mat;
 
-            // 更新缓存 → 永远存「不带描边」的版本
+            // 缓存「不带描边」版本
             _originalMats[r] = baseMats;
 
-            // 如果当前是高亮状态 → 要立刻加回 outline
+            // 如果当前在高亮 -> 加回描边
             if (_activeGroup.Contains(r))
             {
                 var matsWithOutline = new Material[baseMats.Length + 1];
@@ -115,16 +111,13 @@ public class VRSelectionManager : MonoBehaviour
         }
     }
 
-
     // ---------- 内部 ----------
 
     bool TryGetHit(out RaycastHit hit)
     {
-        // 优先用 XRRayInteractor 的 3D 命中
         if (rightRay && rightRay.TryGetCurrent3DRaycastHit(out hit))
             return true;
 
-        // 否则用 rightAim / Camera 的物理射线
         Transform t = rightAim ? rightAim : (Camera.main ? Camera.main.transform : null);
         if (!t) { hit = default; return false; }
 
@@ -135,11 +128,16 @@ public class VRSelectionManager : MonoBehaviour
     {
         if (_current == r) return;
 
-        // 先把上一个对象的所有Renderer还原
+        // 先还原上一个对象的所有 Renderer（倒序，跳过已销毁）
         if (_activeGroup.Count > 0)
         {
-            foreach (var rr in _activeGroup) Unhighlight(rr);
-            _activeGroup.Clear();
+            for (int i = _activeGroup.Count - 1; i >= 0; i--)
+            {
+                var rr = _activeGroup[i];
+                if (!rr) { _activeGroup.RemoveAt(i); continue; } // 已销毁
+                Unhighlight(rr);
+                _activeGroup.RemoveAt(i);
+            }
         }
 
         _current = r;
@@ -152,6 +150,7 @@ public class VRSelectionManager : MonoBehaviour
 
             foreach (var rr in targets)
             {
+                if (!rr) continue;
                 Highlight(rr);
                 _activeGroup.Add(rr);
             }
@@ -168,7 +167,7 @@ public class VRSelectionManager : MonoBehaviour
         if (!outlineMaterial) { Debug.LogWarning("[VRSelectionManager] 请在 Inspector 拖入 outlineMaterial"); return; }
 
         if (!_originalMats.ContainsKey(r))
-            _originalMats[r] = r.sharedMaterials; // 记住原材质
+            _originalMats[r] = r.sharedMaterials; // 记录原材质
 
         // 避免重复添加
         var mats = r.sharedMaterials;
@@ -181,58 +180,64 @@ public class VRSelectionManager : MonoBehaviour
         r.sharedMaterials = newMats;
     }
 
-    // —— 取消选中时恢复原材质（替换你原来的 Unhighlight）
+    // —— 取消选中时恢复原材质（容错版）
     void Unhighlight(Renderer r)
-    {
-        if (_originalMats.TryGetValue(r, out var orig))
-        {
-            r.sharedMaterials = orig;
-            _originalMats.Remove(r);
-        }
-        else
-        {
-            // 兜底：把描边材质剔除
-            var mats = r.sharedMaterials;
-            int count = 0;
-            for (int i = 0; i < mats.Length; i++)
-                if (mats[i] != outlineMaterial) count++;
-
-            if (count != mats.Length)
-            {
-                var newMats = new Material[count];
-                int k = 0;
-                for (int i = 0; i < mats.Length; i++)
-                    if (mats[i] != outlineMaterial) newMats[k++] = mats[i];
-                r.sharedMaterials = newMats;
-            }
-        }
-    }
-
-    // 启用发光关键字（等同在 Inspector 勾 Emission），只对 URP/BiRP 需要
-    void EnsureEmissionKeyword(Renderer r)
-    {
-        var mats = r.sharedMaterials;
-        foreach (var m in mats)
-        {
-            if (!m) continue;
-            if (m.HasProperty(EmissionColorId))
-                m.EnableKeyword("_EMISSION");
-            // HDRP 一般不需要关键字，跳过
-        }
-    }
-    public void ToggleSelection(Renderer r)
     {
         if (!r)
         {
-            ClearSelection();
+            // 已销毁，尝试清掉缓存条目
+            _originalMats.Remove(r);
             return;
         }
 
-        // 如果当前已经选中的是 r，再次抓就取消选中
+        if (_originalMats.TryGetValue(r, out var orig) && orig != null)
+        {
+            r.sharedMaterials = orig;
+            _originalMats.Remove(r);
+            return;
+        }
+
+        // 兜底：剔除描边材质
+        var mats = r.sharedMaterials;
+        int count = 0;
+        for (int i = 0; i < mats.Length; i++)
+            if (mats[i] != outlineMaterial) count++;
+
+        if (count != mats.Length)
+        {
+            var newMats = new Material[count];
+            int k = 0;
+            for (int i = 0; i < mats.Length; i++)
+                if (mats[i] != outlineMaterial) newMats[k++] = mats[i];
+            r.sharedMaterials = newMats;
+        }
+    }
+
+    public void ToggleSelection(Renderer r)
+    {
+        if (!r) { ClearSelection(); return; }
+
         if (_current == r)
             ClearSelection();
         else
             SetCurrent(r);
+    }
+
+    public bool IsSelected(Renderer r)
+    {
+        if (r == null) return false;
+        if (r == _current) return true;
+        return _activeGroup != null && _activeGroup.Contains(r);
+    }
+
+    /// <summary>
+    /// 如果当前选中包含 r，则清除选中（供删除前调用）
+    /// </summary>
+    public void ClearIfContains(Renderer r)
+    {
+        if (!r) return;
+        if (r == _current || (_activeGroup != null && _activeGroup.Contains(r)))
+            ClearSelection();
     }
 
     public void SelectUnderMouse()
@@ -241,7 +246,6 @@ public class VRSelectionManager : MonoBehaviour
             SetCurrent(hit.collider ? hit.collider.GetComponentInParent<Renderer>() : null);
     }
 
-    // （可选）鼠标点击=切换选中（再次点同一个就取消）
     public void ToggleUnderMouse()
     {
         if (TryGetMouseHit(out var hit))
@@ -253,7 +257,6 @@ public class VRSelectionManager : MonoBehaviour
         }
     }
 
-    // 鼠标射线（从屏幕坐标发射）
     bool TryGetMouseHit(out RaycastHit hit)
     {
         hit = default;
@@ -266,7 +269,7 @@ public class VRSelectionManager : MonoBehaviour
 
     void EnsureMarker(Renderer r)
     {
-        if (!selectionMarkerPrefab) return;
+        if (!selectionMarkerPrefab || !r) return;
 
         if (!_marker) _marker = Instantiate(selectionMarkerPrefab);
         _marker.SetActive(true);
@@ -275,5 +278,21 @@ public class VRSelectionManager : MonoBehaviour
         _marker.transform.SetParent(r.transform, true);
         _marker.transform.position = b.center + Vector3.up * b.extents.y * 1.05f;
         _marker.transform.rotation = Quaternion.identity;
+    }
+
+    // —— 自检：若对象被外部销毁而未通知，这里做兜底清理
+    void LateUpdate()
+    {
+        if (!_current && (_activeGroup.Count > 0 || _marker))
+        {
+            _activeGroup.Clear();
+            _marker?.SetActive(false);
+
+            // 清理无效缓存项
+            var dead = new System.Collections.Generic.List<Renderer>();
+            foreach (var kv in _originalMats)
+                if (!kv.Key) dead.Add(kv.Key);
+            foreach (var d in dead) _originalMats.Remove(d);
+        }
     }
 }
