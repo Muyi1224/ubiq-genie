@@ -82,8 +82,15 @@ class FileWatcher(FileSystemEventHandler):
 def ui_loop(prompts):
     global driver, wait, playFirst
     # current = get_ui_prompts()
-    # print(">>> current prompts：", current)
-    # print("found these prompts:", prompts)
+    try:
+        driver.execute_script("""
+          if(window.__autoClearObs){ window.__autoClearObs.disconnect(); }
+          window.__autoClearing = false;
+        """)
+        debug("[ClearAll] force disabled before adding prompts")
+    except Exception as e:
+        debug(f"[ClearAll] force disable error: {e}")
+
     for prompt in prompts:
         try:
             # Add new prompt
@@ -912,6 +919,7 @@ def _is_btn_muted(btn) -> bool|None:
         return False
     return None
 
+
 def ensure_track_mute(track: str, target_mute: bool,
                       retry:int = 3, wait:float = 0.15) -> bool:
     """
@@ -935,6 +943,157 @@ def ensure_track_mute(track: str, target_mute: bool,
 
     debug(f">*Ubiq*<无法将 {track} 置为 mute={target_mute}")
     return False
+
+from selenium.common.exceptions import TimeoutException
+
+_cleared_once = False
+
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
+
+_cleared_once = False
+
+_cleared_once = False
+
+def _count_prompts_js():
+    return """
+      return (function(){
+        // 统计页面上当前的 prompt 条目数
+        const nodes = document.querySelectorAll('div.trackContainer');
+        return nodes ? nodes.length : 0;
+      })();
+    """
+
+def _install_auto_clear_observer():
+    js = r"""
+    (function(){
+      // 已装过就别重复
+      if(window.__autoClearInstalled) return 'installed';
+      window.__autoClearInstalled = true;
+
+      // 控制定时：允许自动清空的开关（默认开）
+      window.__autoClearing = true;
+
+      const tryClick = ()=>{
+        if(!window.__autoClearing) return false; // 关掉后不再点
+        const btn = document.getElementById('clearAllPrompts') 
+                 || document.querySelector('button#clearAllPrompts, button[id*="clear"][id*="prompt"]');
+        if(btn){
+          try{
+            const ev = (n)=>btn.dispatchEvent(new MouseEvent(n,{bubbles:true,cancelable:true,view:window}));
+            ev('pointerdown'); ev('mousedown'); ev('click'); ev('pointerup'); ev('mouseup');
+          }catch(e){ btn.click(); }
+          return true;
+        }
+        return false;
+      };
+
+      // 立刻试几次（只在开启状态下才会触发）
+      setTimeout(tryClick,   0);
+      setTimeout(tryClick, 300);
+      setTimeout(tryClick, 800);
+      setTimeout(tryClick,1500);
+
+      // 监听 DOM 变化；只在开关打开时动作
+      const obs = new MutationObserver(()=>tryClick());
+      obs.observe(document.documentElement,{childList:true,subtree:true});
+      window.__autoClearObs = obs;
+
+      return 'ok';
+    })();
+    """
+    res = driver.execute_script(js)
+    debug(f"[ClearAll] inject observer -> {res}")
+
+def wait_page_ready_and_clear(timeout=40, verify_timeout=8.0):
+    """
+    更稳的清空流程：
+    1) 等文档就绪
+    2) 清 localStorage/sessionStorage（当前域名下）
+    3) 注入 MutationObserver 自动清空
+    4) 多次重试点击，直到 trackContainer 数量为 0 或超时
+    """
+    global _cleared_once, driver
+    if _cleared_once:
+        return
+
+    t0 = time.time()
+    debug("[ClearAll] >>> start")
+
+    try:
+        # 1) DOM ready
+        WebDriverWait(driver, timeout).until(
+            lambda d: d.execute_script("return document.readyState") == "complete"
+        )
+        debug("[ClearAll] document.readyState=complete")
+
+        # 2) 清 storage（防止页面水合后又恢复历史）
+        try:
+            driver.execute_script("try{ localStorage.clear(); sessionStorage.clear(); }catch(e){}")
+            debug("[ClearAll] storage cleared")
+        except Exception as e:
+            debug(f"[ClearAll] storage clear error: {e}")
+
+        # 3) 注入自动清空观察器
+        _install_auto_clear_observer()
+
+        # 4) 主动点一次 + 验证循环
+        def _try_click_once():
+            js_click = r"""
+            const btn = document.getElementById('clearAllPrompts')
+                   || document.querySelector('button#clearAllPrompts, button[id*="clear"][id*="prompt"]');
+            if(!btn) return 'no-btn';
+            try{
+              const ev = (n)=>btn.dispatchEvent(new MouseEvent(n,{bubbles:true,cancelable:true,view:window}));
+              ev('pointerdown'); ev('mousedown'); ev('click'); ev('pointerup'); ev('mouseup');
+            }catch(e){ btn.click(); }
+            return 'clicked';
+            """
+            return driver.execute_script(js_click)
+
+        # 先努点一下
+        res = _try_click_once()
+        debug(f"[ClearAll] first click -> {res}")
+
+        # 验证：等待 trackContainer 变为 0，并在一段时间内保持 0
+        end_at = time.time() + verify_timeout
+        last_n = None
+        stable_zero_time = None
+
+        while time.time() < end_at:
+            n = driver.execute_script(_count_prompts_js())
+            if n != last_n:
+                debug(f"[ClearAll] prompts={n}")
+                last_n = n
+
+            # 验证循环里，当确认稳定为 0 时：
+            if n == 0:
+                if stable_zero_time is None:
+                    stable_zero_time = time.time()
+                if time.time() - stable_zero_time >= 0.6:
+                    debug("[ClearAll] confirmed 0 and stable")
+                    # ★ 关键：清一次就关（断开并关掉开关）
+                    try:
+                        driver.execute_script("""
+                        if(window.__autoClearObs){ window.__autoClearObs.disconnect(); }
+                        window.__autoClearing = false;
+                        """)
+                        debug("[ClearAll] observer disconnected and disabled")
+                    except Exception as e:
+                        debug(f"[ClearAll] disable observer error: {e}")
+                    _cleared_once = True
+                    return
+            else:
+                stable_zero_time = None
+                # 再试点一次
+                _try_click_once()
+            time.sleep(0.2)
+
+        debug("[ClearAll] verify timeout, still not stable 0")
+
+    except Exception as e:
+        debug(f"[ClearAll] error: {e}")
+    finally:
+        debug(f"[ClearAll] <<< done in {time.time()-t0:.2f}s")
 # ────────────────────────────────────────────
 
 
@@ -989,6 +1148,9 @@ if __name__ == "__main__":
     print(f">*Ubiq*<Navigated to MusicFX DJ page.")
 
     wait = WebDriverWait(driver, 30)
+
+    wait_page_ready_and_clear()
+
     volume_factor = 1.0
     recognize_from_file()
 

@@ -417,7 +417,7 @@ export class ContinuousMusicAgent extends ApplicationController {
             line = line.replace(/^>+/, '').replace(/\.+$/, '');  // Remove leading ">" and trailing "."
 
             // -------- Extract keywords and volume --------------------------
-            const keywordsMatch = line.match(/[a-zA-Z ]+/);      // Match letters and spaces
+            const keywordsMatch = line.match(/[a-zA-Z0-9\/\- ]+/);      // Match letters and spaces
             const volumeMatch   = line.match(/\b(\d{1,3})\b/);   // Match number between 0–999
 
             if (!keywordsMatch) {
@@ -426,6 +426,13 @@ export class ContinuousMusicAgent extends ApplicationController {
             }
 
             const keywords = keywordsMatch[0].trim().toLowerCase(); // e.g., calm emotional piano
+            const words = keywords.split(/\s+/).filter(Boolean);
+            const bannedSingles = new Set(['i','a','an','the']);
+            if (keywords.length < 4 || words.length < 2 || (words.length === 1 && bannedSingles.has(words[0]))) {
+                console.log(`Skip weak keywords: "${keywords}"`);
+                return;
+            }
+
             // const volume   = volumeMatch ? volumeMatch[1] : '60';   // Use default 60 if missing
             const volume   = this.lastVolumeFromScale;
             const objectId = this.currentObjectId || 'unknown-id';
