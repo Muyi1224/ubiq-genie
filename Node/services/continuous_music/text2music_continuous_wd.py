@@ -82,14 +82,14 @@ class FileWatcher(FileSystemEventHandler):
 def ui_loop(prompts):
     global driver, wait, playFirst
     # current = get_ui_prompts()
-    try:
-        driver.execute_script("""
-          if(window.__autoClearObs){ window.__autoClearObs.disconnect(); }
-          window.__autoClearing = false;
-        """)
-        debug("[ClearAll] force disabled before adding prompts")
-    except Exception as e:
-        debug(f"[ClearAll] force disable error: {e}")
+    # try:
+    #     driver.execute_script("""
+    #       if(window.__autoClearObs){ window.__autoClearObs.disconnect(); }
+    #       window.__autoClearing = false;
+    #     """)
+    #     debug("[ClearAll] force disabled before adding prompts")
+    # except Exception as e:
+    #     debug(f"[ClearAll] force disable error: {e}")
 
     for prompt in prompts:
         try:
@@ -1149,7 +1149,7 @@ if __name__ == "__main__":
 
     wait = WebDriverWait(driver, 30)
 
-    wait_page_ready_and_clear()
+    # wait_page_ready_and_clear()
 
     volume_factor = 1.0
     recognize_from_file()
