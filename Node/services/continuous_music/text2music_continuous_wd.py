@@ -287,7 +287,7 @@ def ensure_mute_state(prompt_text: str, target_mute: bool, max_retry=3, wait_sec
 
         # 尝试多次后仍未达到
         final_state = _is_button_pressed(btn)
-        print(f">*Ubiq*<⚠️ 无法将 '{prompt_text}' 设为 mute={target_mute}，最终状态={final_state}")
+        print(f">*Ubiq*<cannot '{prompt_text}' set mute={target_mute}，final state={final_state}")
         return False
 
     except Exception as e:

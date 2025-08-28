@@ -70,6 +70,10 @@ public class SpawnMenu : MonoBehaviour
 
     private NetworkId networkId = new NetworkId(99);
     private NetworkContext context;
+    private static NetworkContext sharedContext;
+    private static bool hasSharedContext = false;
+
+
 
     [Header("UI References")]
     public OptionSwitcher[] optionSwitchers;
@@ -78,23 +82,34 @@ public class SpawnMenu : MonoBehaviour
 
     void Awake()
     {
-        // 实现单例模式的标准做法
-        if (Instance != null && Instance != this)
-        {
-            // 如果场景中已经存在一个 SpawnMenu 实例，销毁当前这个重复的
-            Destroy(gameObject);
-        }
-        else
-        {
-            // 将当前实例设为全局唯一的单例
+        //// 实现单例模式的标准做法
+        //if (Instance != null && Instance != this)
+        //{
+        //    // 如果场景中已经存在一个 SpawnMenu 实例，销毁当前这个重复的
+        //    Destroy(gameObject);
+        //}
+        //else
+        //{
+        //    // 将当前实例设为全局唯一的单例
+        //    Instance = this;
+        //}
+        if (Instance == null)
             Instance = this;
-        }
     }
 
     void Start()
     {
-        //context = NetworkScene.Register(this);
-        context = NetworkScene.Register(this, networkId);
+        if (!hasSharedContext)
+        {
+            context = NetworkScene.Register(this, networkId);
+            sharedContext = context;
+            hasSharedContext = true;
+        }
+        else
+        {
+            context = sharedContext;
+        }
+        //context = NetworkScene.Register(this, networkId);
 
         if (trackMuteSwitcher) trackMuteSwitcher.SetContext(context);
         if (bpmSender) bpmSender.SetContext(context);
