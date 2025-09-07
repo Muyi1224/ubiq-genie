@@ -10,7 +10,7 @@ public class MaterialSlotXR : XRGrabInteractable
     {
         base.OnSelectExited(args);
 
-        // 松手后，检测射线最后一个碰撞体
+        // After releasing the hand, detect the last collision body of the ray
         if (args.interactorObject is XRRayInteractor ray &&
             ray.TryGetCurrent3DRaycastHit(out var hit))
         {
@@ -18,7 +18,7 @@ public class MaterialSlotXR : XRGrabInteractable
             if (rend) rend.material = mat;
         }
 
-        // 把图标瞬间回到面板（可选：Tween 回归）
+        // Instantly return the icon to the panel
         transform.localPosition = Vector3.zero;
         transform.localRotation = Quaternion.identity;
     }

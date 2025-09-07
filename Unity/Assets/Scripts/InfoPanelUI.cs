@@ -3,18 +3,18 @@ using TMPro;
 
 public class InfoPanelUI : MonoBehaviour
 {
-    [Header("显示名字的文本组件")]
+    [Header("A text component that displays a name")]
     public TextMeshProUGUI nameText;
 
     public void SetInfo(string name)
     {
         if (nameText != null)
         {
-            nameText.text = $"名字: {name}";
+            nameText.text = $"name: {name}";
         }
         else
         {
-            Debug.LogWarning("未绑定 nameText");
+            Debug.LogWarning("do not binding nameText");
         }
     }
 }

@@ -8,11 +8,16 @@ using UnityEngine.XR.Interaction.Toolkit.Interactables;
 using Unity.VisualScripting;
 using UnityEditor;
 using System.Linq;
+
 public class SpawnMenu : MonoBehaviour
 {
+    // Singleton instance for easy access.
     public static SpawnMenu Instance { get; private set; }
+    // Prefab for the buttons in the spawn menu.
     public GameObject buttonPrefab;
+    // The parent transform where buttons will be created.
     public Transform buttonContainer;
+    // Caches prompts and their associated object IDs.
     private Dictionary<string, PromptData> promptDictionary = new Dictionary<string, PromptData>();
 
     [System.Serializable]
@@ -26,10 +31,11 @@ public class SpawnMenu : MonoBehaviour
     [System.Serializable]
     public class MessageType
     {
+        // Used to parse the 'type' field from a generic JSON message.
         public string type;
     }
 
-    // 专门用来解析 PromptMapUpdate 消息的类
+    // Class specifically for parsing PromptMapUpdate messages.
     [System.Serializable]
     public class PromptData
     {
@@ -46,6 +52,7 @@ public class SpawnMenu : MonoBehaviour
         public long ts;
     }
 
+    // The list of items that can be spawned, configured in the Inspector.
     public List<SpawnableItem> spawnableItems;
 
     public class SpawnedObjectData
@@ -65,15 +72,14 @@ public class SpawnMenu : MonoBehaviour
         public Vector3 rotation;
         public string objectId;
         public string type;
-
     }
 
+    // Ubiq networking variables.
     private NetworkId networkId = new NetworkId(99);
     private NetworkContext context;
+    // A shared context to ensure all instances use the same one.
     private static NetworkContext sharedContext;
     private static bool hasSharedContext = false;
-
-
 
     [Header("UI References")]
     public OptionSwitcher[] optionSwitchers;
@@ -82,23 +88,14 @@ public class SpawnMenu : MonoBehaviour
 
     void Awake()
     {
-        //// 实现单例模式的标准做法
-        //if (Instance != null && Instance != this)
-        //{
-        //    // 如果场景中已经存在一个 SpawnMenu 实例，销毁当前这个重复的
-        //    Destroy(gameObject);
-        //}
-        //else
-        //{
-        //    // 将当前实例设为全局唯一的单例
-        //    Instance = this;
-        //}
+        // Set up the singleton pattern.
         if (Instance == null)
             Instance = this;
     }
 
     void Start()
     {
+        // Register with the Ubiq network, creating or using a shared context.
         if (!hasSharedContext)
         {
             context = NetworkScene.Register(this, networkId);
@@ -109,22 +106,23 @@ public class SpawnMenu : MonoBehaviour
         {
             context = sharedContext;
         }
-        //context = NetworkScene.Register(this, networkId);
 
+        // Inject the network context into other components.
         if (trackMuteSwitcher) trackMuteSwitcher.SetContext(context);
         if (bpmSender) bpmSender.SetContext(context);
 
-        // 通过 Inspector 拖好的引用注入 NetworkContext
         foreach (var sw in optionSwitchers)
         {
             if (sw) sw.SetContext(context);
         }
 
+        // Create the menu buttons.
         PopulateMenu();
     }
 
     void PopulateMenu()
     {
+        // Create a button for each item in the spawnableItems list.
         foreach (var item in spawnableItems)
         {
             var buttonGO = Instantiate(buttonPrefab, buttonContainer);
@@ -134,9 +132,10 @@ public class SpawnMenu : MonoBehaviour
             var objectName = item.name;
             var description = item.description;
 
-
+            // Add a listener to the button's click event.
             buttonGO.GetComponent<Button>().onClick.AddListener(() =>
             {
+                // Spawn the object locally when the button is clicked.
                 var go = SpawnObject(prefab, objectName, description);
                 var idComponent = go.GetComponent<UniqueObjectId>();
                 string objectId = idComponent != null ? idComponent.objectId : Guid.NewGuid().ToString();
@@ -148,16 +147,15 @@ public class SpawnMenu : MonoBehaviour
                     position = go.transform.position,
                     rotation = go.transform.eulerAngles,
                     scale = go.transform.localScale
-
                 };
+                // Note: Sending spawn message is currently commented out.
                 //context.SendJson(msg);
                 //Debug.Log($"[SpawnMenu] Sent - Name: {msg.objectName}, Pos: {msg.position}, Scale: {msg.scale}");
-
             });
         }
     }
 
-    
+    // Main function to instantiate and configure a spawned object.
     GameObject SpawnObject(GameObject prefab, string objectName, string description, Vector3? position = null)
     {
         if (prefab)
@@ -165,8 +163,10 @@ public class SpawnMenu : MonoBehaviour
             Debug.Log("Instantiating prefab: " + prefab.name);
             var go = Instantiate(prefab);
             go.name = objectName;
+            // Set position in front of the camera if not specified.
             go.transform.position = position ?? (Camera.main.transform.position + Camera.main.transform.forward * 1.5f);
 
+            // Ensure necessary components exist on the spawned object.
             if (go.GetComponent<XRGrabInteractable>() == null)
             {
                 go.AddComponent<XRGrabInteractable>();
@@ -185,15 +185,15 @@ public class SpawnMenu : MonoBehaviour
             rb.useGravity = false;
             rb.isKinematic = true;
 
-            // 添加唯一 ID 组件（或获取已有的）
+            // Add or get the unique ID component.
             var idComponent = go.GetComponent<UniqueObjectId>();
             if (idComponent == null)
             {
                 idComponent = go.AddComponent<UniqueObjectId>();
             }
-            string objectId = idComponent.objectId; // 获取 GUID
+            string objectId = idComponent.objectId; // Get the GUID.
 
-            // 配置并赋值到 Sync 脚本
+            // Configure the network synchronization script.
             SyncTransformOnChange sync = go.GetComponent<SyncTransformOnChange>();
             if (sync == null)
             {
@@ -204,11 +204,9 @@ public class SpawnMenu : MonoBehaviour
             sync.description = description;
             sync.context = context;
 
-
             var delete = go.GetComponent<DeleteOnButton>();
 
-
-            // 放置后立即尝试同步一次 transform + 发出消息
+            // Immediately try to sync its state across the network.
             sync.SyncIfChanged();
 
             return go;
@@ -220,21 +218,23 @@ public class SpawnMenu : MonoBehaviour
         }
     }
 
+    // Entry point for processing messages received from the network.
     public void ProcessMessage(ReferenceCountedSceneGraphMessage message)
     {
-
+        // First, determine the message type.
         var genericMessage = message.FromJson<MessageType>();
 
+        // Route the message to the correct handler.
         switch (genericMessage.type)
         {
             case "PromptMapUpdate":
                 var promptMsg = message.FromJson<PromptMapUpdateMessage>();
-                HandlePromptMapUpdate(promptMsg); 
+                HandlePromptMapUpdate(promptMsg);
                 break;
 
-            case "SpawnObject": 
+            case "SpawnObject":
                 var spawnMsg = message.FromJson<SpawnMessage>();
-                HandleSpawnObject(spawnMsg); 
+                HandleSpawnObject(spawnMsg);
                 break;
 
             default:
@@ -243,6 +243,7 @@ public class SpawnMenu : MonoBehaviour
         }
     }
 
+    // Handles a network message to spawn an object.
     private void HandleSpawnObject(SpawnMessage msg)
     {
         var item = spawnableItems.Find(i => i.name == msg.objectName);
@@ -256,26 +257,26 @@ public class SpawnMenu : MonoBehaviour
         }
     }
 
-
+    // Handles updates to the prompt-to-object-ID mapping.
     private void HandlePromptMapUpdate(PromptMapUpdateMessage msg)
     {
         Debug.Log($"Received prompt-map ({msg.updateType}) with {msg.data.Length} items");
 
         switch (msg.updateType)
         {
-            // add
+            // Add a new prompt.
             case "add":
                 foreach (var pd in msg.data)
                 {
                     if (!promptDictionary.ContainsKey(pd.prompt))
                     {
-                        promptDictionary[pd.prompt] = pd;         
+                        promptDictionary[pd.prompt] = pd;
                         Debug.Log($"[ADD]   + {pd.prompt}");
                     }
                 }
                 break;
 
-            // scale
+            // Update an existing prompt (e.g., after scaling).
             case "scale":
                 foreach (var pd in msg.data)
                 {
@@ -300,7 +301,7 @@ public class SpawnMenu : MonoBehaviour
                 }
                 break;
 
-            // delete
+            // Delete a prompt or object IDs from a prompt.
             case "delete":
                 foreach (var pd in msg.data)
                 {
@@ -343,6 +344,7 @@ public class SpawnMenu : MonoBehaviour
                 }
                 break;
 
+            // A full refresh of the entire dictionary.
             default:
                 promptDictionary.Clear();
                 foreach (var pd in msg.data)
@@ -353,7 +355,7 @@ public class SpawnMenu : MonoBehaviour
                 break;
         }
 
-        // Debug
+        // Print the current state of the dictionary for debugging.
         if (promptDictionary.Count == 0)
         {
             Debug.Log("Dictionary is now EMPTY");
@@ -370,6 +372,8 @@ public class SpawnMenu : MonoBehaviour
             Debug.Log($"--- End print, total: {promptDictionary.Count} ---");
         }
     }
+
+    // Finds the prompt associated with a specific object ID.
     public string GetPromptForObjectId(string objectId)
     {
         if (string.IsNullOrEmpty(objectId))
@@ -377,48 +381,31 @@ public class SpawnMenu : MonoBehaviour
             return "ID is invalid";
         }
 
-        // 使用 LINQ 在字典的值中查找包含该 objectId 的条目
+        // Search the dictionary for an entry containing the objectId.
         var promptEntry = promptDictionary
             .FirstOrDefault(kv => kv.Value.objectIds != null && kv.Value.objectIds.Contains(objectId));
 
-        // FirstOrDefault 对于引用类型，如果没找到会返回默认值 (key=null)
+        // If an entry is found, return its key (the prompt).
         if (promptEntry.Key != null)
         {
-            return promptEntry.Key; // 返回找到的 prompt (也就是字典的 Key)
+            return promptEntry.Key;
         }
 
-        return "No associated prompt"; // 如果没找到，返回默认文本
+        return "No associated prompt"; // Return a default text if not found.
     }
 
+    // Spawns an object directly from a prefab reference.
     public void SpawnFromPrefab(GameObject prefab)
     {
         if (!prefab) return;
 
-        // 在 spawnableItems 里找到和这个 prefab 一样的那一项
+        // Find the matching item in the spawnable list to get its metadata.
         var item = spawnableItems.FirstOrDefault(i => i.prefab == prefab);
 
-        // 如果找到了，就用它的 name / description，否则用 prefab 自带的名字
+        // Use the metadata if found, otherwise use the prefab's name.
         string objName = item != null ? item.name : prefab.name;
         string desc = item != null ? item.description : "";
 
         SpawnObject(prefab, objName, desc);
     }
-
-
-    public void SpawnByName(string name, Vector3? position = null)
-    {
-        Debug.Log("Spawn by name: " + name);
-        var item = spawnableItems.Find(i => i.name.ToLower() == name.ToLower());
-        if (item != null)
-        {
-            SpawnObject(item.prefab, item.name, item.description);
-            context.SendJson(new SpawnMessage { objectName = item.name });
-        }
-        else
-        {
-            Debug.LogWarning("No item matched for voice command: " + name);
-        }
-    }
-
-  
 }

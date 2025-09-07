@@ -3,49 +3,59 @@ using UnityEngine.InputSystem;
 
 public class ToggleRadialMenu : MonoBehaviour
 {
-    [Header("要显示/隐藏的菜单根 (X 键)")]
+    [Header("Root of the menu to show/hide (X button)")]
+    // The root GameObject of the radial menu toggled by the X button.
     public GameObject radialMenuRoot;
 
-    [Header("（可选）引用现有 InputAction (X 键)")]
-    public InputActionReference toggleAction; // 不填则默认 LeftHand/X
+    [Header("(Optional) Reference an existing InputAction (X button)")]
+    // An optional reference to a specific InputAction for the toggle behavior. Defaults to LeftHand/X if not set.
+    public InputActionReference toggleAction;
 
-    // ========== 新增：第二个面板，Y 键 ==========
-    [Header("要显示/隐藏的第二个菜单根 (Y 键)")]
+    // ========== Added: Second panel for the Y button ==========
+    [Header("Root of the second menu to show/hide (Y button)")]
+    // The root GameObject of the second radial menu, toggled by the Y button.
     public GameObject radialMenuRootY;
 
-    [Header("（可选）引用现有 InputAction (Y 键)")]
-    public InputActionReference toggleActionY; // 不填则默认 LeftHand/Y
-    // =========================================
+    [Header("(Optional) Reference an existing InputAction (Y button)")]
+    // An optional reference to a specific InputAction for the Y-button toggle. Defaults to LeftHand/Y if not set.
+    public InputActionReference toggleActionY;
 
-    [Header("左手与摆放")]
-    public Transform leftHand;                       // XR 左手控制器/锚点
-    //public Vector3 handLocalOffset = new Vector3(-0.05f, 0.07f, 0.12f); // 相对左手的本地方向偏移(左、上、前)
+    [Header("Left Hand & Placement")]
+    // A reference to the transform of the XR left hand controller/anchor.
+    public Transform leftHand;
+    // Local offset from the left hand (left/right, up/down, forward/back).
+    //public Vector3 handLocalOffset = new Vector3(-0.05f, 0.07f, 0.12f);
     public Vector3 handLocalOffset = new Vector3(-0.03f, 0.08f, 0.20f);
-    public bool followLeftHand = true;               // 是否跟随
-    public bool faceHmd = true;                      // 是否始终朝向HMD
-    public float followLerp = 12f;                   // 平滑系数
+    // Whether the menu should continuously follow the left hand.
+    public bool followLeftHand = true;
+    // Whether the menu should always orient itself to face the HMD.
+    public bool faceHmd = true;
+    // The smoothing coefficient for the follow interpolation.
+    public float followLerp = 12f;
 
-    [Header("Y 面板专属偏移调整（在 handLocalOffset 基础上再加）")]
+    [Header("Y-Panel Specific Offset Adjustment (added to handLocalOffset)")]
+    // An extra offset applied only to the Y-panel, in addition to the base handLocalOffset.
     public Vector3 extraOffsetY = new Vector3(0.05f, 0f, 0f);
 
 
-    [Header("编辑器调试键（仅作用于 X 面板）")]
+    [Header("Editor Debug Key (only affects the X panel)")]
+    // A keyboard key for toggling the X panel during debugging in the Unity Editor.
     public Key debugKey = Key.M;
 
-    private InputAction _runtimeAction;
-    private InputAction _activeAction;
+    
+    private InputAction _runtimeAction;// A private field to hold a runtime-created input action if one is not provided.
+    private InputAction _activeAction;// The currently active input action being used.
 
-    // ===== 新增：Y 键对应的输入 =====
+    // Input corresponding to the Y key
     private InputAction _runtimeActionY;
     private InputAction _activeActionY;
-    // ==============================
 
     void Awake()
     {
         if (!radialMenuRoot) Debug.LogWarning("[ToggleRadialMenu] radialMenuRoot 未赋值");
         else radialMenuRoot.SetActive(false);
 
-        // 新增：第二个面板初始隐藏
+        // The second panel is initially hidden
         if (radialMenuRootY) radialMenuRootY.SetActive(false);
     }
 
@@ -61,7 +71,7 @@ public class ToggleRadialMenu : MonoBehaviour
             }
         }
 
-        // 新增：给第二个面板一个初始大致位置
+        // Give the second panel an initial approximate position
         if (radialMenuRootY)
         {
             var cam = Camera.main;
@@ -75,7 +85,7 @@ public class ToggleRadialMenu : MonoBehaviour
 
     void OnEnable()
     {
-        // X 键（primaryButton）
+        // X （primaryButton）
         if (toggleAction != null && toggleAction.action != null)
             _activeAction = toggleAction.action;
         else
@@ -88,8 +98,8 @@ public class ToggleRadialMenu : MonoBehaviour
         _activeAction.Enable();
         _activeAction.performed += OnToggle;
 
-        // 新增：Y 键（secondaryButton）
-        if (radialMenuRootY != null) // 只有你拖了第二个面板才启用
+        // Y （secondaryButton）
+        if (radialMenuRootY != null) 
         {
             if (toggleActionY != null && toggleActionY.action != null)
                 _activeActionY = toggleActionY.action;
@@ -113,7 +123,6 @@ public class ToggleRadialMenu : MonoBehaviour
             if (_activeAction == _runtimeAction) _activeAction.Disable();
         }
 
-        // 新增：Y 键解绑
         if (_activeActionY != null)
         {
             _activeActionY.performed -= OnToggleY;
@@ -123,7 +132,6 @@ public class ToggleRadialMenu : MonoBehaviour
 
     void Update()
     {
-        // 编辑器键盘调试（仅切 X 面板）
         if (debugKey != Key.None && Keyboard.current != null &&
             Keyboard.current[debugKey].wasPressedThisFrame)
             Toggle();
@@ -134,7 +142,6 @@ public class ToggleRadialMenu : MonoBehaviour
             else if (faceHmd) FaceCamera();
         }
 
-        // 新增：Y 面板跟随/朝向
         if (radialMenuRootY && radialMenuRootY.activeSelf)
         {
             if (followLeftHand) FollowLeftHandY();
@@ -156,7 +163,7 @@ public class ToggleRadialMenu : MonoBehaviour
         }
     }
 
-    // 新增：Y 面板的切换
+    // switch global parameters panel
     void ToggleY()
     {
         if (!radialMenuRootY) return;
@@ -174,7 +181,6 @@ public class ToggleRadialMenu : MonoBehaviour
         radialMenuRoot.transform.position = leftHand.TransformPoint(handLocalOffset);
     }
 
-    // 新增：Y 面板的贴手
     void SnapToLeftHandY()
     {
         if (!leftHand || !radialMenuRootY) return;
@@ -194,7 +200,7 @@ public class ToggleRadialMenu : MonoBehaviour
                  Quaternion.LookRotation(leftHand.forward, Vector3.up);
     }
 
-    // 新增：Y 面板的跟随
+    // panel follow
     void FollowLeftHandY()
     {
         if (!leftHand || !radialMenuRootY) return;
@@ -216,7 +222,7 @@ public class ToggleRadialMenu : MonoBehaviour
             Quaternion.LookRotation(cam.transform.forward, Vector3.up);
     }
 
-    // 新增：Y 面板朝向相机
+    // panel face to camera
     void FaceCameraY()
     {
         var cam = Camera.main;

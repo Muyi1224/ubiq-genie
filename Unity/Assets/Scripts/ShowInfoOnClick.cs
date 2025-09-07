@@ -1,96 +1,108 @@
-// ShowInfoOnClick.cs          把脚本挂到每个可点击 / 可抓取的“球体”Prefab 上
 using UnityEngine;
-using UnityEngine.EventSystems;                  // 鼠标点击
-using UnityEngine.XR.Interaction.Toolkit;       // XR 交互
+using UnityEngine.EventSystems;                  // Required for mouse click interface (IPointerClickHandler).
+using UnityEngine.XR.Interaction.Toolkit;        // Required for XR interaction events.
 using TMPro;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
 
-[RequireComponent(typeof(Collider))]            // 需要碰撞体用于点击／光线检测
-[RequireComponent(typeof(XRBaseInteractable))]  // 保证有 XRBaseInteractable（抓取或选择用）
+/// <summary>
+/// This component shows or hides an information panel when the object is clicked
+/// by a mouse or selected by an XR controller.
+/// </summary>
+[RequireComponent(typeof(Collider))]             // Ensures the object has a Collider for interaction.
+[RequireComponent(typeof(XRBaseInteractable))]   // Ensures the object can be interacted with via XR Toolkit.
 public class ShowInfoOnClick : MonoBehaviour,
-                               IPointerClickHandler              // 桌面左键点击
+                               IPointerClickHandler // Implements the interface for handling pointer clicks.
 {
-    /* ---------------- 可在 Inspector 中赋值 ---------------- */
 
-    [Header("InfoPanel 预制体 (World-Space Canvas)")]
-    public InfoPanelUI infoPanelPrefab;          // 你的 World-Space 面板预制体
+    [Header("InfoPanel Prefab (World-Space Canvas)")]
+    // The prefab for the UI panel to be instantiated.
+    public InfoPanelUI infoPanelPrefab;
 
-    [Header("面板相对球体的本地偏移量")]
+    [Header("Panel's Local Offset Relative to the Sphere")]
+    // The local position offset of the panel relative to this object.
     public Vector3 localOffset = new Vector3(0.6f, 0.2f, 0f);
 
-    [Header("面板朝向微调 (欧拉角)")]
+    [Header("Panel Orientation Fine-tuning (Euler Angles)")]
+    // An additional rotation offset applied to the panel.
     public Vector3 rotationOffset = Vector3.zero;
 
-    /* ---------------- 私有字段 ---------------- */
 
-    private InfoPanelUI currentPanel;            // 运行时实例
-    private XRBaseInteractable interactable;     // XR 组件 (Select / Activate 事件)
+    private InfoPanelUI currentPanel;            // A reference to the currently instantiated info panel.
+    private XRBaseInteractable interactable;     // A reference to the XR interactable component on this object.
 
-    /* ========== 初始化 / 反初始化 ========== */
 
     void Awake()
     {
-        // 获取 XRBaseInteractable（已由 RequireComponent 保证存在）
+        // Get the XRBaseInteractable component (guaranteed to exist by RequireComponent).
         interactable = GetComponent<XRBaseInteractable>();
 
-        // XR 手柄 / 激光：Select(按下) 或 Activate(Trigger) 都可
+        // Listen for the 'selectEntered' event from XR controllers (e.g., grip or trigger press).
         interactable.selectEntered.AddListener(OnXRSelect);
-        // 如果想改成 activated 事件，换成 interactable.activated
+        // To use the 'activated' event instead, you would use: interactable.activated.
     }
 
     void OnDestroy()
     {
+        // Clean up the listener when the object is destroyed to prevent memory leaks.
         if (interactable)
             interactable.selectEntered.RemoveListener(OnXRSelect);
     }
 
-    /* ========== 桌面：鼠标左键点击 ========== */
+    /* ========== Desktop: Left Mouse Click ========== */
+    // This method is called when a mouse click is detected on this object's collider.
     public void OnPointerClick(PointerEventData eventData)
     {
+        // Check if the click was from the left mouse button.
         if (eventData.button == PointerEventData.InputButton.Left)
         {
             TogglePanel();
         }
     }
 
-    /* ========== XR：手柄/激光选中 ========== */
+    /* ========== XR: Controller/Ray Selection ========== */
+    // This method is called when an XR controller selects this object.
     private void OnXRSelect(SelectEnterEventArgs args) => TogglePanel();
 
-    /* ========== 核心：开 / 关 面板 ========== */
+    /* ========== Core Logic: Open / Close Panel ========== */
     private void TogglePanel()
     {
+        // If a panel instance already exists, destroy it.
         if (currentPanel)
         {
             Destroy(currentPanel.gameObject);
             currentPanel = null;
         }
+        // Otherwise, create a new panel.
         else
         {
-            // 找一个 World-Space Canvas 作为父物体；没有就放场景根
+            // Find a World-Space Canvas in the scene to be the parent; if none, use the scene root.
             var canvas = FindAnyObjectByType<Canvas>();
             string objName = gameObject.name;
 
+            // Instantiate the panel prefab at the calculated position and rotation.
             currentPanel = Instantiate(
                 infoPanelPrefab,
-                transform.position + transform.TransformVector(localOffset),
-                transform.rotation * Quaternion.Euler(rotationOffset),
-                canvas ? canvas.transform : null
+                transform.position + transform.TransformVector(localOffset), // Apply local offset in world space.
+                transform.rotation * Quaternion.Euler(rotationOffset),       // Apply rotation offset.
+                canvas ? canvas.transform : null                             // Set parent transform.
             );
 
-            currentPanel.SetInfo(objName);   // 自定义：在 InfoPanelUI 里显示文字
+            // Call a custom method on the panel to set its display text.
+            currentPanel.SetInfo(objName);
         }
     }
 
-    /* ========== 每帧更新面板的位置 / 朝向 ========== */
+    /* ========== Update Panel's Position / Orientation Every Frame ========== */
     private void LateUpdate()
     {
+        // If there is no active panel, do nothing.
         if (!currentPanel) return;
 
-        // 1. 位置 —— 随球移动
+        // 1. Position ---- Keep the panel attached to the moving sphere.
         currentPanel.transform.position =
             transform.position + transform.TransformVector(localOffset);
 
-        // 2. 朝向 —— 跟随球自身旋转 (可附加欧拉偏移)
+        // 2. Orientation ---- Match the sphere's rotation (with an optional offset).
         currentPanel.transform.rotation =
             transform.rotation * Quaternion.Euler(rotationOffset);
     }

@@ -1,212 +1,233 @@
-//using UnityEngine;
-//using Ubiq.Messaging;
-//using Ubiq.Networking;
+using UnityEngine;
+using Ubiq.Messaging;
+using Ubiq.Networking;
+using System;
 
-//// 环形缓冲：容量需是 2 的幂（便于位运算）；这里给 ~1 秒容量（可按需调大）
-//public class FloatRingBuffer
-//{
-//    private readonly float[] buf;
-//    private int w, r;
-//    private readonly int mask;
+/// <summary>
+/// A circular buffer for float data, optimized for audio samples.
+/// Its capacity must be a power of two for efficient bitwise operations.
+/// </summary>
+public class FloatRingBuffer
+{
+    private readonly float[] buf; // The underlying array for the buffer.
+    private int w, r; // Write and read pointers.
+    private readonly int mask; // Bitmask for wrapping pointers (capacity - 1).
 
-//    public FloatRingBuffer(int capacityPow2 = 1 << 16) // 65536 samples ≈ 1.36s @48k
-//    {
-//        // 确保为 2 的幂
-//        int cap = 1;
-//        while (cap < capacityPow2) cap <<= 1;
-//        buf = new float[cap];
-//        mask = cap - 1;
-//        w = r = 0;
-//    }
+    // The capacity is rounded up to the next power of two.
+    public FloatRingBuffer(int capacityPow2 = 1 << 16) // 65536 samples ≈ 1.36s @48k
+    {
+        // Ensure capacity is a power of two.
+        int cap = 1;
+        while (cap < capacityPow2) cap <<= 1;
+        buf = new float[cap];
+        mask = cap - 1;
+        w = r = 0; // Initialize pointers.
+    }
 
-//    public int Count => (w - r) & mask;
-//    public int Capacity => buf.Length;
+    public int Count => (w - r) & mask; //The number of samples currently in the buffer.
+    public int Capacity => buf.Length; // The total capacity of the buffer.
 
-//    // 写入整块（覆盖最旧数据，不阻塞）
-//    public void WriteBlock(float[] src, int count)
-//    {
-//        for (int i = 0; i < count; i++)
-//        {
-//            buf[w] = src[i];
-//            w = (w + 1) & mask;
-//            if (w == r) r = (r + 1) & mask; // 覆盖旧数据
-//        }
-//    }
+    // Writes a block of data. Overwrites the oldest data if the buffer is full.
+    public void WriteBlock(float[] src, int count)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            buf[w] = src[i];
+            w = (w + 1) & mask; // Increment and wrap the write pointer.
+            if (w == r) r = (r + 1) & mask; // If we've wrapped around, push the read pointer forward.
+        }
+    }
 
-//    // 读取最多 count 个样本，返回实际读取数
-//    public int ReadBlock(float[] dst, int count)
-//    {
-//        int n = 0;
-//        while (n < count && r != w)
-//        {
-//            dst[n++] = buf[r];
-//            r = (r + 1) & mask;
-//        }
-//        return n;
-//    }
-//}
+    // Reads a block of data. Returns the number of samples actually read.
+    public int ReadBlock(float[] dst, int count)
+    {
+        int n = 0;
+        while (n < count && r != w) // Read until destination is full or buffer is empty.
+        {
+            dst[n++] = buf[r];
+            r = (r + 1) & mask; // Increment and wrap the read pointer.
+        }
+        return n;
+    }
+}
 
-//[RequireComponent(typeof(AudioSource))]
-//public class MessageReceiver : MonoBehaviour
-//{
-//    private const int SampleRate = 48000;
-//    private const int Channels = 1;
-//    private const int BytesPerSample = 2;
-//    private const int WavHeaderBytes = 44;
+[RequireComponent(typeof(AudioSource))]
+public class MessageReceiver : MonoBehaviour
+{
+    // --- Audio Constants ---
+    private const int SampleRate = 48000;
+    private const int Channels = 1;
+    private const int BytesPerSample = 2;
+    private const int WavHeaderBytes = 44;
 
-//    // 目标/起播缓冲（样本数）
-//    private const int TargetBufferSamples = SampleRate / 5;   // 200ms
-//    private const int PreBufferSamples = SampleRate * 3 / 10; // 300ms
+    // --- Buffering Targets ---
+    // The ideal number of samples to keep in the buffer for smooth playback.
+    private const int TargetBufferSamples = SampleRate / 5;   // 200ms
+    // The number of samples required before playback starts, to prevent initial stutter.
+    private const int PreBufferSamples = SampleRate * 3 / 10; // 300ms
 
-//    private AudioSource source;
-//    private NetworkContext ctx;
+    private AudioSource source;
+    private NetworkContext ctx;
 
-//    private readonly object rbLock = new object();
-//    private FloatRingBuffer rb = new FloatRingBuffer(1 << 17); // ~131072 samples ≈ 2.73s
-//    private float[] decodeScratch = new float[0];
-//    private float[] temp = new float[0];
+    // --- Threading and Buffers ---
+    private readonly object rbLock = new object(); // Lock for thread-safe access to the ring buffer.
+    private FloatRingBuffer rb = new FloatRingBuffer(1 << 17); // ~131072 samples ≈ 2.73s
+    private float[] decodeScratch = new float[0]; // Scratch buffer for converting bytes to floats.
+    private float[] temp = new float[0]; // Temporary buffer for reading from the ring buffer.
 
-//    private bool hasPlaybackStarted = false;
-//    private float lastSample = 0f;
-//    private int totalSamplesPlayed = 0;
+    // --- Playback State ---
+    private bool hasPlaybackStarted = false;
+    private float lastSample = 0f; // The last sample value played, used for underrun.
+    private int totalSamplesPlayed = 0; // Counter for applying a fade-in at the start.
 
-//    void Start()
-//    {
-//        ctx = NetworkScene.Register(this, new NetworkId(95));
-//        source = GetComponent<AudioSource>();
+    void Start()
+    {
+        ctx = NetworkScene.Register(this, new NetworkId(95));
+        source = GetComponent<AudioSource>();
 
-//        // 建议在 Project Settings/Audio 设置 48k；这里仅做运行时提示
-//        if (AudioSettings.outputSampleRate != SampleRate)
-//        {
-//            Debug.LogWarning($"Audio output sample rate = {AudioSettings.outputSampleRate}, expected {SampleRate}.");
-//        }
+        // Warn if the project's audio settings don't match the expected sample rate.
+        if (AudioSettings.outputSampleRate != SampleRate)
+        {
+            Debug.LogWarning($"Audio output sample rate = {AudioSettings.outputSampleRate}, expected {SampleRate}.");
+        }
 
-//        var clip = AudioClip.Create(
-//            "LiveMusic",
-//            SampleRate * 2, // Unity 内部缓冲大小（与环形缓冲分离）
-//            Channels,
-//            SampleRate,
-//            true,
-//            OnAudioRead
-//        );
+        // Create a procedural audio clip that will be fed by our OnAudioRead callback.
+        var clip = AudioClip.Create(
+            "LiveMusic", // Clip name
+            SampleRate * 2, // Length of Unity's internal buffer
+            Channels,
+            SampleRate,
+            true, // True for streaming
+            OnAudioRead // The callback that provides audio data.
+        );
 
-//        source.clip = clip;
-//        source.loop = true;
+        source.clip = clip;
+        source.loop = true;
 
-//        source.priority = 0;
-//        source.bypassEffects = true;
-//        source.bypassListenerEffects = true;
-//        source.bypassReverbZones = true;
-//        source.spatialBlend = 0f; // 如需 3D，可改为 1
-//    }
+        // Configure AudioSource for clean, direct playback.
+        source.priority = 0;
+        source.bypassEffects = true;
+        source.bypassListenerEffects = true;
+        source.bypassReverbZones = true;
+        source.spatialBlend = 0f; // Set to 2D audio. Change to 1 for 3D.
+    }
+    // This method is called by Ubiq when a message arrives on channel 95.
+    public void ProcessMessage(ReferenceCountedSceneGraphMessage msg)
+    {
+        var data = msg.data;
 
-//    public void ProcessMessage(ReferenceCountedSceneGraphMessage msg)
-//    {
-//        // Ubiq 提供的是可读区段；此处转为 byte[]/Span 处理
-//        var data = msg.data;
+        // Ignore JSON control messages (which might start with '{').
+        if (data.Length > 0 && data[0] == (byte)'{')
+            return;
 
-//        // 忽略 JSON 控制消息（你的后端可能偶尔发文本）
-//        if (data.Length > 0 && data[0] == (byte)'{')
-//            return;
+        // Check for and skip a WAV header if present.
+        int offset = (data.Length >= WavHeaderBytes &&
+                      data[0] == (byte)'R' && data[1] == (byte)'I') ? WavHeaderBytes : 0;
 
-//        int offset = (data.Length >= WavHeaderBytes &&
-//                      data[0] == (byte)'R' && data[1] == (byte)'I') ? WavHeaderBytes : 0;
+        int pcmBytes = data.Length - offset;
+        if (pcmBytes <= 0) return;
 
-//        int pcmBytes = data.Length - offset;
-//        if (pcmBytes <= 0) return;
+        // Ensure we have an even number of bytes for 16-bit samples.
+        if ((pcmBytes & 1) == 1) pcmBytes -= 1;
+        int samples = pcmBytes / BytesPerSample;
 
-//        // 必须是偶数字节（16-bit 对齐）
-//        if ((pcmBytes & 1) == 1) pcmBytes -= 1;
-//        int samples = pcmBytes / BytesPerSample;
+        // Resize the scratch buffer if needed.
+        if (decodeScratch.Length < samples)
+            decodeScratch = new float[samples];
 
-//        // 准备解码缓存
-//        if (decodeScratch.Length < samples)
-//            decodeScratch = new float[samples];
+        // Convert the 16-bit little-endian PCM byte data to float samples.
+        int j = 0;
+        for (int i = 0; i < pcmBytes; i += 2)
+        {
+            short s = (short)((data[offset + i + 1] << 8) | data[offset + i]);
+            decodeScratch[j++] = Mathf.Clamp(s / 32768f, -1f, 1f);
+        }
 
-//        // 一次性字节→float（小端 16-bit）
-//        int j = 0;
-//        for (int i = 0; i < pcmBytes; i += 2)
-//        {
-//            short s = (short)((data[offset + i + 1] << 8) | data[offset + i]);
-//            decodeScratch[j++] = Mathf.Clamp(s / 32768f, -1f, 1f);
-//        }
+        // Lock the ring buffer for thread-safe writing.
+        lock (rbLock)
+        {
+            rb.WriteBlock(decodeScratch, samples);
 
-//        // 写入环形缓冲（仅一次加锁）
-//        lock (rbLock)
-//        {
-//            rb.WriteBlock(decodeScratch, samples);
+            // If playback hasn't started and we've buffered enough audio, start the AudioSource.
+            if (!hasPlaybackStarted && rb.Count >= PreBufferSamples)
+            {
+                source.Play();
+                hasPlaybackStarted = true;
+                // Debug.Log($"Start playback. RB={rb.Count}");
+            }
+        }
+    }
 
-//            // 起播：缓冲达到阈值再启动，避免一开始抖
-//            if (!hasPlaybackStarted && rb.Count >= PreBufferSamples)
-//            {
-//                source.Play();
-//                hasPlaybackStarted = true;
-//                // Debug.Log($"Start playback. RB={rb.Count}");
-//            }
-//        }
-//    }
+    // This callback is called by Unity's audio system when it needs more audio data.
+    private void OnAudioRead(float[] buffer)
+    {
+        int n = buffer.Length;
 
-//    private void OnAudioRead(float[] buffer)
-//    {
-//        int n = buffer.Length;
+        // Get the number of available samples from the ring buffer.
+        int available;
+        lock (rbLock) { available = rb.Count; }
 
-//        // 读之前获取可用量
-//        int available;
-//        lock (rbLock) { available = rb.Count; }
+        // --- Dynamic Resampling (Time-stretching) ---
+        // Calculate a resampling ratio to keep our buffer close to the target size.
+        float ratio = 1.0f;
+        int diff = available - TargetBufferSamples;
 
-//        // 计算微重采样比率（根据偏差 ±1% 内微调）
-//        float ratio = 1.0f;
-//        int diff = available - TargetBufferSamples;
-//        ratio += Mathf.Clamp(diff / (float)SampleRate * 0.1f, -0.01f, 0.01f);
+        // Speed up playback if we have too much buffered data, slow down if we have too little.
+        ratio += Mathf.Clamp(diff / (float)SampleRate * 0.1f, -0.01f, 0.01f);
 
-//        int want = Mathf.CeilToInt(n / ratio);
-//        EnsureTempSize(want);
+        // Determine how many samples we need to read from our buffer to generate 'n' output samples.
+        int want = Mathf.CeilToInt(n / ratio);
+        EnsureTempSize(want);
 
-//        int got;
-//        lock (rbLock)
-//        {
-//            got = rb.ReadBlock(temp, want);
-//        }
+        // Read the required samples from the ring buffer.
+        int got;
+        lock (rbLock)
+        {
+            got = rb.ReadBlock(temp, want);
+        }
 
-//        if (got > 1)
-//        {
-//            // 线性重采样，把 temp[0..got) 拉伸/压缩到 buffer[0..n)
-//            float step = (got - 1) / (float)(n - 1);
-//            float pos = 0f;
-//            for (int i = 0; i < n; i++)
-//            {
-//                int i0 = (int)pos;
-//                int i1 = (i0 + 1 < got) ? i0 + 1 : i0;
-//                float frac = pos - i0;
-//                float s = temp[i0] * (1f - frac) + temp[i1] * frac;
+        if (got > 1)
+        {
+            // Perform linear resampling to stretch/compress the 'got' samples into the 'n' sized output buffer.
+            float step = (got - 1) / (float)(n - 1);
+            float pos = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                int i0 = (int)pos;
+                int i1 = (i0 + 1 < got) ? i0 + 1 : i0;
+                float frac = pos - i0;
+                float s = temp[i0] * (1f - frac) + temp[i1] * frac;
 
-//                // 起播 1k 样本淡入（避免咔哒）
-//                if (totalSamplesPlayed < 1000)
-//                {
-//                    float fade = totalSamplesPlayed / 1000f;
-//                    s *= fade;
-//                }
+                // Apply a short fade-in at the very beginning of playback to prevent clicks.
+                if (totalSamplesPlayed < 1000)
+                {
+                    float fade = totalSamplesPlayed / 1000f;
+                    s *= fade;
+                }
 
-//                buffer[i] = s;
-//                lastSample = s;
-//                totalSamplesPlayed++;
-//                pos += step;
-//            }
-//        }
-//        else
-//        {
-//            // 欠载：用 lastSample 保持直流，避免瞬断（可改为极短淡出）
-//            for (int i = 0; i < n; i++) buffer[i] = lastSample;
-//        }
-//    }
+                buffer[i] = s;
+                lastSample = s;
+                totalSamplesPlayed++;
+                pos += step;
+            }
+        }
+        else
+        {
+            // Underrun: If we don't have enough data, fill the buffer with the last sample value
+            // to avoid silence or a loud pop.
+            for (int i = 0; i < n; i++) buffer[i] = lastSample;
+        }
+    }
 
-//    private void EnsureTempSize(int size)
-//    {
-//        if (temp.Length < size) temp = new float[size];
-//    }
+    // Helper to ensure the temporary buffer is large enough.
+    private void EnsureTempSize(int size)
+    {
+        if (temp.Length < size) temp = new float[size];
+    }
 
-//    void OnDestroy()
-//    {
-//        if (source != null && source.isPlaying) source.Stop();
-//    }
-//}
+    void OnDestroy()
+    {
+        // Stop the audio source when the object is destroyed.
+        if (source != null && source.isPlaying) source.Stop();
+    }
+}

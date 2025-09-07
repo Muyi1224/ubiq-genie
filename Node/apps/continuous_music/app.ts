@@ -1,8 +1,6 @@
 import { NetworkId } from 'ubiq';
 import { ApplicationController } from '../../components/application';
 import { SpeechToTextService } from '../../services/speech_to_text/service';
-// import { ArtInterpretationService } from '../../services/art_interpretation/service';
-// import { ArtGenerationService } from '../../services/art_generation/service';
 import { ContinuousMusicGenerationService } from '../../services/continuous_music/service';
 import { MediaReceiver } from '../../components/media_receiver';
 import { MessageReader } from '../../components/message_reader';
@@ -20,28 +18,30 @@ export class ContinuousMusicAgent extends ApplicationController {
         mediaReceiver?: MediaReceiver;
         speech2text?: SpeechToTextService;
         audioRecorder?: AudioRecorder;
-        // artGenerationService?: ArtGenerationService;
         musicReceiver?: MessageReader;
         deleteReceiver?: MessageReader;
-        // artInterpretation?: ArtInterpretationService;
         musicGenerationService?: ContinuousMusicGenerationService;
         textGenerationService?: TextGenerationService;
         writer?: fs.WriteStream;
         
         
     } = {};
-    
+
+    // Temporary state variables to link asynchronous events.
     lastVolumeFromScale: number = 50;
     lastTypeFromUnity: string='';
+    currentSpeech:string = '';
+    currentObjectId: string = '';
 
     byteArray?: any;
     targetPeer: string = '';
-    currentSpeech:string = '';
-    currentObjectId: string = '';
+    
     constructor(configFile: string = 'config.json') {
         super(configFile);
     }
 
+    // This is the core data structure. It maps a music prompt string (e.g., "[calm piano] {60}")
+    // to a set of object IDs in the Unity scene that are associated with it.
     promptMap: Map<string, Set<string>> = new Map(); // description -> objectId 集合
 
     start(): void {
@@ -64,10 +64,13 @@ export class ContinuousMusicAgent extends ApplicationController {
         // A SpeechToTextService to transcribe audio coming from peers
         this.components.speech2text = new SpeechToTextService(this.scene);
 
+        // Listens for messages from Unity on channel 99 (e.g., add, scale, mute).
         this.components.musicReceiver = new MessageReader(this.scene, 99);
+
+        // Listens for delete messages from Unity on channel 100
         this.components.deleteReceiver = new MessageReader(this.scene, 100);
-        // this.components.artInterpretation = new ArtInterpretationService(this.scene);
-        //this.components.artGenerationService = new ArtGenerationService(this.scene);
+
+        // Manages the Python script that controls the music generation website.
         this.components.musicGenerationService = new ContinuousMusicGenerationService(this.scene);
 
         // An AudioRecorder to record audio data from peers
@@ -85,7 +88,6 @@ export class ContinuousMusicAgent extends ApplicationController {
 
     definePipeline() {
         // Step 1: When we receive audio data from a peer we send it to the transcription service and recording service
-        // this.components.mediaReceiver?.on('audio', (uuid: string, data: RTCAudioData) => {
         this.components.mediaReceiver?.on('audio', (uuid: string, data: RTCAudioData) => {
             // Convert the Int16Array to a Buffer
             const sampleBuffer = Buffer.from(data.samples.buffer);
@@ -104,28 +106,21 @@ export class ContinuousMusicAgent extends ApplicationController {
             const peerName = peer?.properties.get('ubiq.displayname');
 
             let response = data.toString();
-            var threshold = 10; //for filtering useless responses
+            var threshold = 10; //  Filter out short or empty responses.
             if (response.length != 0 && response.length > threshold) {
                 // Remove all newlines from the response
                 response = response.replace(/(\r\n|\n|\r)/gm, '');
-                // console.log("Step 2 -> retrieve from speech to text...not used here");
-                // console.log(response);
+                // If the transcription is a command (starts with '>')...
                 if (response.startsWith('>')) {
                     response = response.slice(1); // Slice off the leading '>' character
                     this.currentSpeech = response;
 
-                    const ts = new Date().toISOString().replace(/:/g, '-');     // 与 Transcription 脚本同格式
-                    const display = peerName || identifier;                      // 有昵称用昵称，没有就用 UUID
+                    const ts = new Date().toISOString().replace(/:/g, '-');     // Timestamp format matching the transcription script.
+                    const display = peerName || identifier;                      // Use nickname if available, otherwise UUID.
                     console.log(`[${ts}] ${display}: ${response}`);
-                    // this.log(`[${ts}] ${display}: ${response}`, 'info', '');
 
+                    // send it to the LLM to generate a music prompt.
                     this.components.textGenerationService?.sendToChildProcess('default', response + '\n');
-                    /*if (response.trim()) {
-                        const message = (peerName + ' -> Agent:: ' + response).trim();
-                        this.log(message);
-
-                        this.components.codeGenerationService?.sendToChildProcess('default', message + '\n');
-                    }*/
                 }
             }
         });
@@ -134,30 +129,29 @@ export class ContinuousMusicAgent extends ApplicationController {
 
         // STEP 1 this service receive the image and send to LLM 
         this.components.musicReceiver?.on('data', (data: any) => {
-            //console.log("---- Step 1 -> send to create music prompt [...][...][...]");
             const selectionData = JSON.parse(data.message.toString());
             console.log(`Received from Unity → Type: ${selectionData.type}, ID: ${selectionData.objectId}, Description: ${selectionData.description}, Scale: ${JSON.stringify(selectionData.scale)}`);
 
-            //const peerUUID = selectionData.peer;
-            //this.byteArray = selectionData.image;
-            //this.components.artInterpretation?.sendToChildProcess('default', data.message.toString() + '\n'); //@@from here how to deal with image to the service FIRST
-            // this.components.musicGenerationService?.sendToChildProcess('default', data.message.toString() + '\n');
+            // Store the object ID and command type for later use in other asynchronous events.
+            this.currentObjectId = selectionData.objectId ?? '';
             this.currentObjectId = selectionData.objectId ?? '';
             this.lastTypeFromUnity = selectionData.type ?? "add";
 
+            // Convert the object's scale (size) from Unity into a volume level (0-100).
             let volumeFromScale = 50;
             if (
                 selectionData.scale &&
                 typeof selectionData.scale.x === 'number' &&
                 !isNaN(selectionData.scale.x)
             ) {
-                const MAX_SCALE = 2.0; // 可根据实际需要修改上限
+                const MAX_SCALE = 2.0; // The maximum expected scale value from Unity.
                 const MIN_SCALE = 0.0;
                 const clamped = Math.min(Math.max(selectionData.scale.x, MIN_SCALE), MAX_SCALE);
                 volumeFromScale = Math.round((clamped / MAX_SCALE) * 100);
             }
             this.lastVolumeFromScale = volumeFromScale;
 
+            // If a new object is added, send its description to the LLM
             if(selectionData.type === "add"){
                 this.components.textGenerationService?.sendToChildProcess('default', selectionData.description + '\n');
             }
@@ -166,7 +160,7 @@ export class ContinuousMusicAgent extends ApplicationController {
                 const objId = selectionData.objectId?.trim();
                 if (!objId) return;
 
-                // 1. 在 promptMap 里找行
+                // 1. Find the old prompt
                 let oldLine: string | undefined;
                 for (const [line, ids] of this.promptMap.entries()) {
                     if (ids.has(objId)) { oldLine = line; break; }
@@ -176,23 +170,23 @@ export class ContinuousMusicAgent extends ApplicationController {
                     return;
                 }
 
-                // 2. 提取关键字，拼新行
+                // 2. Create the new prompt line with the updated volume.
                 const kwMatch = oldLine.match(/\[([^\]]+)\]/);
                 const keywords = kwMatch ? kwMatch[1].trim() : '';
                 const newLine = `[${keywords}] {${volumeFromScale}}`;
 
-                // 3. 更新 gpt.txt
+                // 3. Update the gpt.txt file
                 const __dirname = dirname(fileURLToPath(import.meta.url));
                 const gptPath   = path.resolve(__dirname, '../../apps/continuous_music/data/gpt.txt');
                 const newContent = fs.readFileSync(gptPath, 'utf-8')
                                     .split(/\r?\n/)
                                     .map(l => (l.trim() === oldLine.trim() ? newLine : l))
-                                    .filter(l => l.trim())      // 去掉空行
+                                    .filter(l => l.trim())      // Remove empty lines.
                                     .join('\n') + '\n';
                 fs.writeFileSync(gptPath, newContent);
                 console.log(`◎ Updated gpt.txt → ${newLine}`);
 
-                // 4. 更新 promptMap
+                // 4. Update internal promptMap
                 const ids = this.promptMap.get(oldLine)!;
                 ids.delete(objId);
                 if (ids.size === 0) this.promptMap.delete(oldLine);
@@ -202,7 +196,7 @@ export class ContinuousMusicAgent extends ApplicationController {
 
                 this.sendPromptMapToUnity("scale", 99);
 
-                // 5. 通知 Python 调整音量
+                // 5. Sent to Python to adjust the volume
                 const msg = { type: "SetPromptVolume", prompt: keywords, volume: volumeFromScale };
                 this.components.musicGenerationService?.sendToChildProcess(
                     'default',
@@ -219,7 +213,7 @@ export class ContinuousMusicAgent extends ApplicationController {
                 let matchedPromptLine: string | undefined;
                 let matchedKeywords: string | undefined;
 
-                // 找到包含该 objectId 且关键词匹配的 promptLine
+                // Find the prompt line and keywords associated with this object.
                 for (const [promptLine, idSet] of this.promptMap.entries()) {
                     if (idSet.has(objId)) {
                         const match = promptLine.match(/\[([^\]]+)\]/);
@@ -236,7 +230,7 @@ export class ContinuousMusicAgent extends ApplicationController {
                     return;
                 }
 
-                // 构造并发送 mute 消息
+                // Construct and send the mute command
                 const msg = {
                     type: "Mute",
                     objectId: objId,
@@ -249,7 +243,7 @@ export class ContinuousMusicAgent extends ApplicationController {
                     JSON.stringify(msg) + '\n'
                 );
 
-                console.log(`◎ Sent mute status to Python → objectId: ${msg.objectId}, mute: ${msg.mute}, prompt: ${msg.prompt}`);
+                console.log(`Sent mute status to Python → objectId: ${msg.objectId}, mute: ${msg.mute}, prompt: ${msg.prompt}`);
                 return;
             }
 
@@ -270,7 +264,7 @@ export class ContinuousMusicAgent extends ApplicationController {
             }
 
             if (selectionData.type === "bpm") {
-                const msg = { type: "bpm", value: selectionData.value };   // 60-180 或 "auto"
+                const msg = { type: "bpm", value: selectionData.value };   // 60-180 or "auto"
                 this.components.musicGenerationService?.sendToChildProcess(
                     "default",
                     JSON.stringify(msg) + "\n"
@@ -279,7 +273,7 @@ export class ContinuousMusicAgent extends ApplicationController {
             }
 
             if (selectionData.type === "trackmute") {
-                // selectionData.track 应为 "drums" | "bass" | "other"
+                // selectionData.track should be "drums" | "bass" | "other"
                 const msg = {
                     type: "TrackMute",
                     track: (selectionData.track || "").toLowerCase(),
@@ -293,12 +287,11 @@ export class ContinuousMusicAgent extends ApplicationController {
             }
 
             if (selectionData.type === "key") {
-                const msg = { type: "key", value: selectionData.value };  // 例: "C maj / A min"
+                const msg = { type: "key", value: selectionData.value };  // e.g., "C maj / A min"
                 this.components.musicGenerationService?.sendToChildProcess(
                     "default",
                     JSON.stringify(msg) + "\n"
                 );
-                // console.log(`◎ Sent key change → ${selectionData.value}`);
                 return;
             }
 
@@ -313,12 +306,12 @@ export class ContinuousMusicAgent extends ApplicationController {
 
             console.log("delete object:", objId);
 
-            // ---------- 在 promptMap 中查找对应的 prompt ---------------------------
+            //  Find the associated prompt in promptMap 
             let matchedPromptLine: string | undefined;
             for (const [promptLine, idSet] of this.promptMap.entries()) {
                 if (idSet.has(objId)) {
-                    matchedPromptLine = promptLine;        // 形如 "[soothing tranquil piano] {50}"
-                    idSet.delete(objId);                   // 从集合移除该 ID
+                    matchedPromptLine = promptLine;        //  "[soothing tranquil piano] {50}"
+                    idSet.delete(objId);                   // Remove the ID from the map
                     if (idSet.size === 0) this.promptMap.delete(promptLine);
                     break;
                 }
@@ -335,7 +328,7 @@ export class ContinuousMusicAgent extends ApplicationController {
             }
 
 
-            // ---------- 提取关键字并发送 DeletePrompt ------------------------------
+            // Extract the keywords and tell the Python script to remove the prompt.
             const kwMatch = matchedPromptLine.match(/\[([^\]]+)\]/);
             const keywords = kwMatch ? kwMatch[1].trim() : '';
             if (keywords) {
@@ -344,10 +337,10 @@ export class ContinuousMusicAgent extends ApplicationController {
                     'default',
                     JSON.stringify(deleteMsg) + '\n'
                 );
-                console.log(`◎ Sent DeletePrompt for '${keywords}'`);
+                console.log(`Sent DeletePrompt for '${keywords}'`);
             }
 
-            // ---------- 从 gpt.txt 中删除这一行 ------------------------------------
+            // Remove the line from gpt.txt to keep the state file clean.
             const __dirname = dirname(fileURLToPath(import.meta.url));
             const gptPath   = path.resolve(
                 __dirname,
@@ -364,59 +357,12 @@ export class ContinuousMusicAgent extends ApplicationController {
         });
 
         
-
-        // // STEP 2 this service retrieve information about object and functionalities
-        // this.components.artInterpretation?.on('data', (data: Buffer, identifier: string) => {
-        //     const response = data.toString();
-        //     console.log('Received text generation response from child process ' + identifier + ': ' + response);
-        //     console.log("---- Step 3 -> send to musicfx dj");
-        //     if (response.startsWith(">")) {
-        //         const cleaned_response = response.slice(1);
-
-        //         /*const jsonObject = {
-        //             prompt: response + "." + this.currentSpeech,
-        //             output_file: "result.png",
-        //             //image: this.byteArray
-        //         };
-                
-        //         const jsonString = JSON.stringify(jsonObject);
-        //         this.components.artGenerationService?.sendToChildProcess('default', jsonString+ '\n');*/
-
-        //         const jsonObjectMusic = {
-        //             prompt:  response, // +  this.currentSpeech,
-        //             //image: this.byteArray
-        //         };
-
-        //         const jsonStringMusic = JSON.stringify(jsonObjectMusic);
-        //         this.components.musicGenerationService?.sendToChildProcess('default', jsonStringMusic + '\n');
-        //     }
-        //     this.currentSpeech = "";
-        // });
-    
-        // Step 3: When we receive a response from the text generation service, we send it to the text to speech service
-        /*this.components.artGenerationService?.on('data', (data: Buffer, identifier: string) => {
-            const response = data.toString();
-            //console.log('Received text generation response from child process ' + identifier + ': ' + response);
-            console.log("Step 3");
-            // Parse target peer from the response (Agent -> TargetPeer: Message)
-            if (response.startsWith(">")) {
-                //console.log(" -> Send:: " + response);
-                const cleaned_response = response.slice(1);
-                
-                this.scene.send(99, {
-                        type: "ArtGenerated",
-                        peer: identifier,
-                        data: cleaned_response,
-                    });
-            }
-        });*/
-
-        // === Listen to ChatGPT output and write to gpt.txt =======================
+        // Listen to ChatGPT output and write to gpt.txt 
         this.components.textGenerationService?.on('data', (buf: Buffer) => {
             let line = buf.toString().trim();                    // Example:  >Calm emotional piano {60}.
             line = line.replace(/^>+/, '').replace(/\.+$/, '');  // Remove leading ">" and trailing "."
 
-            // -------- Extract keywords and volume --------------------------
+            // Extract keywords and volume
             const keywordsMatch = line.match(/[a-zA-Z0-9\/\- ]+/);      // Match letters and spaces
             const volumeMatch   = line.match(/\b(\d{1,3})\b/);   // Match number between 0–999
 
@@ -436,10 +382,10 @@ export class ContinuousMusicAgent extends ApplicationController {
             // const volume   = volumeMatch ? volumeMatch[1] : '60';   // Use default 60 if missing
             const volume   = this.lastVolumeFromScale;
             const objectId = this.currentObjectId || 'unknown-id';
-            // -------- Reformat and write to gpt.txt ------------------------
+            // Reformat and write to gpt.txt 
             const finalLine = `[${keywords}] {${volume}}`;
 
-            // 将 objectId 记录到 promptMap
+            // Add the new prompt and its associated objectID to promptMap
             if (!this.promptMap.has(finalLine)) {
                 this.promptMap.set(finalLine, new Set<string>());
             }
@@ -450,70 +396,34 @@ export class ContinuousMusicAgent extends ApplicationController {
                             '../../apps/continuous_music/data/gpt.txt');
 
             fs.appendFileSync(gptPath, finalLine + '\n');
-            console.log('◎ Wrote to gpt.txt → ' + finalLine);
+            console.log('Wrote to gpt.txt → ' + finalLine);
 
-            // 打印 promptMap 状态
+            // print promptMap
             // this.printPromptMap();
             this.sendPromptMapToUnity("add", 99);
         });
 
 
-
-        // Background
-        // this.components.musicGenerationService?.on('data', (data: Buffer, identifier: string) => {
-        //     let response = data;
-        //     //console.log('Received TTS response from child process ' + identifier);
-            
-        //     const debug = data.toString();
-        //     if (debug.startsWith(">*Ubiq*")){
-        //         console.log('Response: ' + debug);
-        //         return;
-        //     }
-
-        //     this.scene.send(new NetworkId(95), {
-        //         type: 'AudioInfo',
-        //         // targetPeer: this.targetPeer,
-        //         targetPeer: "Music Service",
-        //         audioLength: data.length,
-        //     });
-            
-        //     // while (response.length > 0) {
-        //     //     // console.log('Response length: ' + response.length + ' bytes');
-        //     //     this.scene.send(new NetworkId(95), response.slice(0, 16000));
-        //     //     response = response.slice(16000);
-        //     // }
-
-        //     while (response.length > 0) {
-        //     const chunk = response.slice(0, 16000);
-
-        //     console.log(
-        //     `Sending chunk: length=${chunk.length}, headBytes=[${chunk.subarray(0,4).join(', ')}]`
-        //     );
-
-        //     this.scene.send(new NetworkId(95), chunk);
-        //     response = response.slice(16000);
-        // }
-
-        // });
+        // handle music stream send back from Python
         this.components.musicGenerationService?.on("data", (data: Buffer) => {
             const text = data.toString();
 
-            // 1) 拦截控制消息
+            // Ignore log messages
             if (text.startsWith(">*Ubiq*")) {
                 console.log("Response:", text);
                 return;
             }
 
-            // 2) 如果整个 data 就只有 2 字节且是 [13,10]，直接丢弃
+            // Ignore empty chunk and data with only 2 bytes
             if (data.length === 2 && data[0] === 13 && data[1] === 10) {
                 console.log("Skip lone CRLF chunk");
                 return;
             }
 
-            // 3) 真正发送 PCM
+            // find real PCM
             let rest = data;
 
-            // —— 如果最后尾巴是 CRLF，把它剪掉 ——  
+            // Trim CRLF
             if (
                 rest.length >= 2 &&
                 rest[rest.length - 2] === 13 &&
@@ -535,15 +445,21 @@ export class ContinuousMusicAgent extends ApplicationController {
                     continue;
                 }
 
-                // console.log(
-                //     `Sending chunk: len=${chunk.length}, head=[${chunk.subarray(0, 4).join(",")}]`
-                // );
+                // console.log(`Sending chunk: len=${chunk.length}, head=[${chunk.subarray(0, 4).join(",")}]`);
+
+                // Send the audio chunk on channel 95 for Unity to play.
                 this.scene.send(new NetworkId(95), chunk);
             }
         });
 
     }
-
+    /**
+     * A helper function to send the current state of all prompts to Unity.
+     * This is used to keep the frontend UI synchronized with the backend state.
+     * @param updateType - The type of update ('add', 'scale', 'delete').
+     * @param channel - The network channel to send the message on.
+     * @param customData - Optional custom data for specific updates like deletion.
+     */
     sendPromptMapToUnity(
         updateType: string,
         channel: number = 99,
@@ -558,12 +474,12 @@ export class ContinuousMusicAgent extends ApplicationController {
 
         // Log message that send to Unity
         // console.log(
-        //     `◎ PromptMap (${updateType}) → ch ${channel}\n` +
+        //     `PromptMap (${updateType}) → ch ${channel}\n` +
         //     JSON.stringify(payload, null, 2)
         // );
     }
 
-
+    // debug function to log the current map
     printPromptMap() {
     console.log("Current promptMap status:");
     for (const [prompt, idSet] of this.promptMap.entries()) {

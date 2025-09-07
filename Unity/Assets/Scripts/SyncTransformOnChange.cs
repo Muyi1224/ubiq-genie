@@ -9,44 +9,51 @@ using UnityEngine.XR.Interaction.Toolkit.Interactables;
 using static DeleteOnButton;
 using System.Collections;
 
+// This component requires an XRGrabInteractable.
 [RequireComponent(typeof(XRGrabInteractable))]
 public class SyncTransformOnChange : MonoBehaviour
 {
-    /* ===== 公共 & 网络字段 ===== */
+    /* ===== Public & Network Fields ===== */
+    // Basic properties of the object for networking.
     public string objectName;
     public string description;
     public string objectId;
     public NetworkContext context;
 
-    /* ===== 自定义参数 ===== */
-    public float debounceSeconds = 1.0f;       // “无操作”多久后才发送 edit
+    /* ===== Custom Parameters ===== */
+    // How long to wait after an edit before sending a network message.
+    public float debounceSeconds = 1.0f;
 
-    /* ===== 私有状态 ===== */
+    /* ===== Private State ===== */
+    // Variables for managing the object's description.
     private string baseNoun;
     private string tail;
     private Color lastColor;
     private string lastMatName;
 
+    // Last known transform values to detect changes.
     private Vector3 lastPos;
     private Vector3 lastRot;
     private Vector3 lastScale;
     private bool hasSentTransform;
 
+    // State for grab interaction and debouncing edits.
     private XRGrabInteractable grab;
     private float lastEditTime;
     private bool editPending;
 
+    // Defines the structure for a color change message.
     public struct colorMessage
     {
         public string description;
         public string objectId;
         public string type;
-
     }
 
-    /* ---------------- 生命周期 ---------------- */
+    /* ---------------- Lifecycle ---------------- */
     void Awake()
     {
+        // Get initial color and material name from the renderer.
         var r = GetComponent<Renderer>();
         lastColor = r ? r.material.color : Color.white;
         lastMatName = r ? CleanMatName(r.material.name) : "material";
@@ -54,24 +61,24 @@ public class SyncTransformOnChange : MonoBehaviour
 
     void Start()
     {
+        // Parse the description and set up grab event listeners.
         ParseInitialDescription(description, out baseNoun, out tail);
 
         grab = GetComponent<XRGrabInteractable>();
         grab.selectEntered.AddListener(_ => CacheTransform());
-        //grab.selectExited.AddListener(_ => SyncIfChanged());
+        // When released by all hands, check if transform has changed.
         grab.selectExited.AddListener(args =>
         {
-            // 只有完全无人抓着时再同步，避免双手中途松一只就发送
             if (!grab.isSelected) SyncIfChanged();
         });
 
-
+        // Store the initial transform.
         CacheTransform();
     }
 
     void Update()
     {
-        // 若有待发送的 edit 且已静止 debounceSeconds，则发送
+        // If an edit is pending and the debounce time has passed, send it.
         if (editPending && Time.time - lastEditTime >= debounceSeconds)
         {
             SendEdit();
@@ -79,12 +86,14 @@ public class SyncTransformOnChange : MonoBehaviour
         }
     }
 
-    /* ---------------- 更新描述 ---------------- */
+    /* ---------------- Description Update ---------------- */
+    // Updates the description when color or material changes.
     public void UpdateDescription(Color? newColor = null, Material newMat = null)
     {
         if (newColor != null) lastColor = (Color)newColor;
         if (newMat != null) lastMatName = CleanMatName(newMat.name);
 
+        // Reconstruct the description string.
         string clr = ColorName(lastColor);
         string hex = ColorUtility.ToHtmlStringRGB(lastColor);
 
@@ -93,10 +102,12 @@ public class SyncTransformOnChange : MonoBehaviour
 
         Debug.Log($"[Description] {description}");
 
+        // Mark that an edit is pending.
         lastEditTime = Time.time;
         editPending = true;
     }
 
+    // Sends the edit by deleting and re-adding the object on the network.
     private void SendEdit()
     {
         //var edit = new colorMessage { type = "edit", objectId = objectId, description = description };
@@ -107,9 +118,11 @@ public class SyncTransformOnChange : MonoBehaviour
         StartCoroutine(DeleteThenAdd(0.03f));
     }
 
+    // Coroutine to simulate an update by sending a delete message, then an add message.
     private IEnumerator DeleteThenAdd(float delaySeconds)
     {
         /* ---------- 1. delete ---------- */
+        // Send a message to delete the object on other clients.
         var deleteMsg = new DeleteMessage
         {
             type = "delete",
@@ -118,14 +131,15 @@ public class SyncTransformOnChange : MonoBehaviour
         context.Scene.SendJson(new NetworkId(100), deleteMsg);
         Debug.Log($"[Edit→Delete] id:{objectId}");
 
-        /* ---------- 2. 等待再 add ---------- */
+        /* ---------- 2. wait then add ---------- */
         yield return new WaitForSeconds(delaySeconds);
 
+        // Send a message to re-add the object with the updated description.
         var addMsg = new SpawnMessage
         {
             objectId = objectId,
             objectName = objectName,
-            description = description,          // 已是新描述
+            description = description,          // Use the new description
             //position = transform.position,
             //rotation = transform.eulerAngles,
             scale = transform.localScale,
@@ -135,13 +149,13 @@ public class SyncTransformOnChange : MonoBehaviour
         Debug.Log($"[Edit→Add] id:{objectId} prompt:\"{description}\"");
     }
 
-    /* ---------------- 同步 transform ---------------- */
+    /* ---------------- Transform Sync ---------------- */
+    // Checks if the scale has changed and sends a network message.
     public void SyncIfChanged()
     {
         if (transform.localScale != lastScale)
         {
-            //transform.localScale += Vector3.one * 0.1f;
-
+            // Create a message for the transform change.
             var msg = new SpawnMessage
             {
                 objectId = objectId,
@@ -150,6 +164,7 @@ public class SyncTransformOnChange : MonoBehaviour
                 //position = transform.position,
                 //rotation = transform.eulerAngles,
                 scale = transform.localScale,
+                // Message type is 'add' for the first time, 'scale' for subsequent changes.
                 type = hasSentTransform ? "scale" : "add"
             };
             context.SendJson(msg);
@@ -158,10 +173,11 @@ public class SyncTransformOnChange : MonoBehaviour
                   $" des:{msg.description}  scale:{msg.scale}");
 
             hasSentTransform = true;
-            CacheTransform();
+            CacheTransform(); // Update the cached transform.
         }
     }
 
+    // Stores the current transform values.
     private void CacheTransform()
     {
         lastPos = transform.position;
@@ -169,7 +185,8 @@ public class SyncTransformOnChange : MonoBehaviour
         lastScale = transform.localScale;
     }
 
-    /* ---------------- 描述解析 ---------------- */
+    /* ---------------- Description Parsing ---------------- */
+    // Extracts the base noun and tail from the initial description string.
     private static void ParseInitialDescription(string src,
                                                 out string noun,
                                                 out string tail)
@@ -178,6 +195,7 @@ public class SyncTransformOnChange : MonoBehaviour
         string head = idx >= 0 ? src[..idx].Trim() : src.Trim();
         tail = idx >= 0 ? src[idx..].Trim() : "that makes piano sounds";
 
+        // Clean up the head string to find the noun.
         head = Regex.Replace(head, @"^(a|an|the)\s+", "", RegexOptions.IgnoreCase);
         head = Regex.Replace(head, @"made of .*$", "", RegexOptions.IgnoreCase).Trim();
 
@@ -185,16 +203,19 @@ public class SyncTransformOnChange : MonoBehaviour
         noun = words.Length > 0 ? words[^1] : "object";
     }
 
-    /* ---------------- 工具函数 ---------------- */
+    /* ---------------- Utility Functions ---------------- */
+    // Cleans the material name string.
     private static string CleanMatName(string raw)
         => string.IsNullOrEmpty(raw) ? "material" : raw.Replace(" (Instance)", "").ToLower();
 
+    // Converts a Color to a human-readable name.
     private static string ColorName(Color c)
     {
         Color.RGBToHSV(c, out float h, out float s, out float v);
         h *= 360f;
 
-        if (s < 0.12f) // 灰阶
+        // Handle grayscale colors.
+        if (s < 0.12f)
         {
             if (v >= 0.96f) return "white";
             if (v >= 0.82f) return "very light grey";
@@ -204,6 +225,7 @@ public class SyncTransformOnChange : MonoBehaviour
             return "black";
         }
 
+        // Determine brightness prefix.
         string prefix =
             (v >= 0.92f) ? "pale " :
             (v >= 0.80f) ? "light " :
@@ -212,6 +234,7 @@ public class SyncTransformOnChange : MonoBehaviour
             (v >= 0.20f) ? "dark " :
                            "deep ";
 
+        // Determine base color from hue.
         string baseColor;
         if (h < 8f) baseColor = "red";
         else if (h < 14f) baseColor = "vermillion";

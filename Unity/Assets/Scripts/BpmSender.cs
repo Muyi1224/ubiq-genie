@@ -10,19 +10,19 @@ public class BpmSender : MonoBehaviour
     public TextMeshProUGUI bpmLabel;
 
     [Header("Send Settings")]
-    [Tooltip("停止拖动多久后才发送 (秒)")]
+    [Tooltip("How long to wait after the user stops dragging before sending the value (in seconds).")]
     public float debounceSeconds = 0.35f;
 
-    private NetworkContext ctx;          // 由 SpawnMenu 注入
+    private NetworkContext ctx;          // injected by SpawnMenu
     public void SetContext(NetworkContext c) => ctx = c;
 
     private struct BpmMessage { public string type; public int value; }
 
-    // ---- 内部状态 ----
-    private float lastChangeTime = 0f;   // 最近一次滑动的时间
-    private int pendingBpm;            // 需发送但尚未发送的值
-    private int lastSentBpm = -1;      // 上一次已发送的值
-    private bool hasPending = false;
+    // ---- Internal State ----
+    private float lastChangeTime = 0f;   // The time when the slider was last moved.
+    private int pendingBpm;            // The BPM value that is waiting to be sent.
+    private int lastSentBpm = -1;      // The last BPM value that was successfully sent.
+    private bool hasPending = false;   // Flag indicating if there is a value waiting to be sent.
 
     private void Start()
     {
@@ -33,7 +33,7 @@ public class BpmSender : MonoBehaviour
             return;
         }
 
-        // 初始 UI
+        // initial UI
         pendingBpm = Mathf.RoundToInt(bpmSlider.value);
         UpdateLabel(pendingBpm);
 
@@ -46,7 +46,7 @@ public class BpmSender : MonoBehaviour
         lastChangeTime = Time.time;
         hasPending = true;
 
-        UpdateLabel(pendingBpm);         // 即时 UI 更新（不发送）
+        UpdateLabel(pendingBpm);         // Update the UI label immediately for responsive feedback.
     }
 
     private void Update()
@@ -75,7 +75,7 @@ public class BpmSender : MonoBehaviour
         }
 
         var msg = new BpmMessage { type = "bpm", value = bpm };
-        ctx.SendJson(msg);               // 默认 99 号信道
+        ctx.SendJson(msg);               // 99 channel
         Debug.Log($"[BpmSender] sent {bpm}");
     }
 }

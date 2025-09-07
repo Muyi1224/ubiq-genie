@@ -1,5 +1,5 @@
 using UnityEngine;
-using UnityEngine.InputSystem;                 // 新输入系统
+using UnityEngine.InputSystem;                 
 using UnityEngine.XR.Interaction.Toolkit;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
 
@@ -7,22 +7,20 @@ using UnityEngine.XR.Interaction.Toolkit.Interactables;
 [RequireComponent(typeof(Renderer))]
 public class ShowInfoOnSelect : MonoBehaviour
 {
-    [Header("UI 设置")]
+    [Header("UI settings")]
     public GameObject infoPanelPrefab;
     public Vector3 panelOffset = new Vector3(0.3f, 0f, 0f);
 
     private GameObject _currentInfoPanel;
     private XRBaseInteractable _interactable;
     private bool _isSelected;
-
-    // ★ 手柄 A 键（代码创建，免 Inspector 绑定）
     private InputAction _toggleAction;
 
     void Awake()
     {
         _interactable = GetComponent<XRBaseInteractable>();
 
-        // Quest 右手 A：OpenXR 与 Oculus 兼容
+        // Quest right hand A: OpenXR compatible with Oculus
         _toggleAction = new InputAction("ToggleInfo");
         _toggleAction.AddBinding("<XRController>{RightHand}/primaryButton");   // OpenXR A
         _toggleAction.AddBinding("<OculusTouchController>{RightHand}/button1"); // Oculus A
@@ -30,7 +28,7 @@ public class ShowInfoOnSelect : MonoBehaviour
 
     void OnEnable()
     {
-        // 只记录“是否被抓住/选中”
+        // Only record whether it is caught/selected
         _interactable.selectEntered.AddListener(_ => _isSelected = true);
         _interactable.selectExited.AddListener(_ => _isSelected = false);
 
@@ -49,27 +47,23 @@ public class ShowInfoOnSelect : MonoBehaviour
 
     void Update()
     {
-        // 面板朝向相机
+        // panel face to camera
         if (_currentInfoPanel != null && Camera.main != null)
         {
             _currentInfoPanel.transform.LookAt(Camera.main.transform);
             _currentInfoPanel.transform.Rotate(0f, 180f, 0f);
         }
 
-        // PC：只有在“被抓住/选中”时，A 键才切换
         if (_isSelected && Keyboard.current != null && Keyboard.current.aKey.wasPressedThisFrame)
         {
             TogglePanel();
         }
     }
 
-    // 手柄 A：只有在“被抓住/选中”时切换
     private void OnTogglePerformed(InputAction.CallbackContext _)
     {
         if (_isSelected) TogglePanel();
     }
-
-    // ---- 切换逻辑 ----
     private void TogglePanel()
     {
         if (_currentInfoPanel == null) ShowPanel();
@@ -91,7 +85,6 @@ public class ShowInfoOnSelect : MonoBehaviour
         var panelData = _currentInfoPanel.GetComponentInChildren<InfoPanelDataReceiver>();
         if (panelData != null)
         {
-            // 如果你的 Renderer 在子物体，也可以改成 GetComponentInChildren<Renderer>()
             panelData.SetTargetObject(GetComponent<Renderer>());
 
             string objectName = gameObject.name;
@@ -109,7 +102,7 @@ public class ShowInfoOnSelect : MonoBehaviour
         }
         else
         {
-            Debug.LogError("InfoPanelDataReceiver 没找到，请检查 Prefab。", infoPanelPrefab);
+            Debug.LogError("InfoPanelDataReceiver not found, check Prefab。", infoPanelPrefab);
         }
     }
 

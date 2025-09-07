@@ -29,16 +29,16 @@ public class DeleteOnButton : MonoBehaviour
 
     void Awake()
     {
-        // OpenXR 通用绑定：RightHand/secondaryButton = B
+        // OpenXR Generic Binding：RightHand/secondaryButton = B
         deleteAction = new InputAction("Delete",
             binding: "<XRController>{RightHand}/secondaryButton");
-        // Oculus 兼容绑定：button2 = B
+        // Oculus Compatible binding：button2 = B
         deleteAction.AddBinding("<OculusTouchController>{RightHand}/button2");
     }
 
     void OnEnable()
     {
-        // 监听 B 键
+        // listen on B
         deleteAction.Enable();
         deleteAction.performed += OnDeletePerformed;
     }
@@ -51,10 +51,10 @@ public class DeleteOnButton : MonoBehaviour
 
     void Start()
     {
-        context = NetworkScene.Register(this, networkId);   // 不改
+        context = NetworkScene.Register(this, networkId); 
         syncInfo = GetComponent<SyncTransformOnChange>();
 
-        // 订阅 XR 选中 / 取消选中事件（保持原状）
+        // Subscribe to XR check/uncheck events
         var ix = GetComponent<XRBaseInteractable>();
         ix.selectEntered.AddListener(_ => isSelected = true);
         ix.selectExited.AddListener(_ => isSelected = false);
@@ -62,7 +62,7 @@ public class DeleteOnButton : MonoBehaviour
 
     void Update()
     {
-        // 保留原 PC 调试逻辑：只有被选中时按 F 才删
+        // Keep the original PC debugging logic: press F to delete only when it is selected
         if (isSelected &&
             Keyboard.current != null &&
             Keyboard.current.fKey.wasPressedThisFrame)
@@ -71,14 +71,13 @@ public class DeleteOnButton : MonoBehaviour
         }
     }
 
-    // ★ 新增：Quest3 右手 B 键触发（仅当当前被选中时）
+    // Quest3 right controller B key trigger (only when currently selected)
     private void OnDeletePerformed(InputAction.CallbackContext _)
     {
         if (isSelected)
             DeleteWithMessage();
     }
 
-    // 如果你在 XRI 的事件里绑定了 Activate，也沿用原先逻辑
     public void DeleteFromXR(ActivateEventArgs args)
     {
         DeleteWithMessage();
@@ -107,6 +106,5 @@ public class DeleteOnButton : MonoBehaviour
 
     public void ProcessMessage(ReferenceCountedSceneGraphMessage message)
     {
-        /* 仅发送，不接收；留空 */
     }
 }

@@ -5,8 +5,8 @@ public class MatListBuilder : MonoBehaviour
 {
     [System.Serializable] public struct Slot { public Sprite icon; public Material mat; }
     public Slot[] slots;
-    public GameObject matIconPrefab;   // 指向刚才的 MatIcon
-    public RectTransform listParent;   // 指向 MaterialList
+    public GameObject matIconPrefab;   // point to MatIcon
+    public RectTransform listParent;   // point to MaterialList
 
     void Start()
     {

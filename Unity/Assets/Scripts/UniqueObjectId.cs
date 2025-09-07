@@ -9,7 +9,7 @@ public class UniqueObjectId : MonoBehaviour
     {
         if (string.IsNullOrEmpty(objectId))
         {
-            objectId = Guid.NewGuid().ToString(); // Éú³ÉÎ¨Ò» UUID
+            objectId = Guid.NewGuid().ToString(); // generate unique UUID
         }
     }
 }

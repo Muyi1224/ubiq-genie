@@ -3,7 +3,7 @@ using Ubiq.Messaging;
 
 public class VolumeSender : MonoBehaviour
 {
-    private NetworkId networkId = new NetworkId(99); // 要与后端监听的ID一致
+    private NetworkId networkId = new NetworkId(99); 
     private NetworkContext context;
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
@@ -24,7 +24,6 @@ public class VolumeSender : MonoBehaviour
     }
     public void ProcessMessage(ReferenceCountedSceneGraphMessage message)
     {
-        // 不处理任何消息
     }
 
     // Update is called once per frame

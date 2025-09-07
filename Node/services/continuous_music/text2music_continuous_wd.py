@@ -18,6 +18,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
+from selenium.common.exceptions import TimeoutException
 import re
 
 from pathlib import Path
@@ -35,10 +36,12 @@ RATE = 48000
 CHUNK = 1024
 THRESHOLD = 100
 
+# Global flag to ensure the play button is only clicked once.
 playFirst = False
 
 debug_log = open("debug.txt", "w", buffering=1)
 def debug(msg):
+    # Helper function for writing timestamped debug messages.
     debug_log.write(f"{time.time()}: {msg}\n")
     debug_log.flush()
 
@@ -57,13 +60,14 @@ class FileWatcher(FileSystemEventHandler):
         if event.src_path == FILE_PATH:
             if event.src_path == FILE_PATH:
                 now = time.time()
-                # 如果距离上次处理不到 0.5 秒，就忽略
+                # Debounce to prevent rapid firing, ignore if less than 0.5s since last process.
                 if now - self._last_ts < 0.5:
                     return
                 self._last_ts = now
                 self.process_file()
 
     def process_file(self):
+        # Reads the file, parses content, and executes callbacks.
         try:
             with open(FILE_PATH, "r", encoding="utf-8") as file:
                 content = file.read()
@@ -72,6 +76,7 @@ class FileWatcher(FileSystemEventHandler):
                 # Extract volume value within curly brackets
                 volume_matches = re.findall(r'\{(\d+)\}', content)
                 volume = int(volume_matches[0]) if volume_matches else None
+                # Trigger callbacks with parsed data.
                 self.callback_prompts(prompts)
                 if volume is not None:
                     self.callback_volume(volume)
@@ -80,6 +85,10 @@ class FileWatcher(FileSystemEventHandler):
 
 
 def ui_loop(prompts):
+    """
+    Main UI interaction loop, triggered by file changes.
+    Adds new prompts and processes action queues (volume, delete).
+    """
     global driver, wait, playFirst
     # current = get_ui_prompts()
     # try:
@@ -93,9 +102,7 @@ def ui_loop(prompts):
 
     for prompt in prompts:
         try:
-            # Add new prompt
-            #add_prompt = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "input[placeholder='Add a prompt ...']")))
-            # add_prompt = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "input[placeholder='Add a prompt …']")))
+             # Find the input field, clear it, enter the new prompt, and press Enter.
             add_prompt = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "input")))
             add_prompt.clear()
             add_prompt.send_keys(prompt)
@@ -120,15 +127,15 @@ def ui_loop(prompts):
             playFirst = True
 
 
-        print_all_prompt_volumes()
+        print_all_prompt_volumes()  # For debugging: print current volumes of all prompts.
+        
         # set_prompt_volume_percent("calm", 10) 
         with volume_lock:
             while volume_queue:
                 kw, vol = volume_queue.pop(0)
                 set_prompt_volume_percent(kw, vol)
 
-        # delete_prompt_by_text("soothing chilled piano")
-        # —— 最后执行 delete_queue 中挂起的删除请求 ——
+        # Process any pending prompt deletions from the queue.
         with delete_lock:
             while delete_queue:
                 keyword = delete_queue.pop(0)
@@ -149,12 +156,18 @@ def set_volume(value):
 
 
 def generate_music_from_prompt(data, chunk_counter):
+    """
+    Processes a chunk of audio data, resamples it, and writes to stdout.
+    """
     global volume_factor
     audio_data = np.frombuffer(data, dtype=np.int16)
     volume = np.sqrt(np.mean(np.abs(audio_data ** 2)))
 
+    # Only process if audio volume is above the threshold.
     if volume > THRESHOLD:
+        # Resample from 96kHz (assumed source) to 48kHz.
         resampled_audio_data = scipy.signal.resample(audio_data, int(len(audio_data) * (48000 / 96000)))
+        # Write the processed audio data to standard output.
         sys.stdout.buffer.write(np.int16(resampled_audio_data))
 
 
@@ -184,11 +197,11 @@ def recognize_from_file():
 
 def get_ui_prompts():
     prompts = []
-    # 1) Retrieve all top-level prompt containers
+    # Retrieve all top-level prompt containers
     containers = driver.find_elements(By.CSS_SELECTOR, "div.trackContainer")
     for c in containers:
         try:
-            # 2) Locate the text-only <div> within the container (assumes class "kWfOUR")
+            # Locate the text-only <div> within the container (assumes class "kWfOUR")
             text_div = c.find_element(By.CSS_SELECTOR, "div.kWfOUR")
             prompts.append(text_div.text.strip())
         except:
@@ -240,7 +253,7 @@ def delete_prompt_by_text(keyword):
         print(f">*Ubiq*<Error deleting prompt '{keyword}': {e}")
         return False
 
-# 全局队列和锁
+# Global queues and locks
 delete_queue = []
 volume_queue = []
 delete_lock  = threading.Lock()
@@ -249,7 +262,8 @@ volume_lock  = threading.Lock()
 
 def _is_button_pressed(btn):
     """
-    返回 True=已静音, False=未静音, None=无法判断
+    Helper to check if a button is in a pressed/active state.
+    Returns True (pressed), False (not pressed), or None (indeterminate).
     """
     aria = btn.get_attribute("aria-pressed")
     if aria is not None:
@@ -265,12 +279,12 @@ def _is_button_pressed(btn):
 
 def ensure_mute_state(prompt_text: str, target_mute: bool, max_retry=3, wait_sec=0.15):
     """
-    点击 muteButton 直到按钮状态 == target_mute
+    Ensures a specific prompt's mute button is in the target state by clicking it if necessary.
     """
     try:
         cont = _find_container_by_prompt(prompt_text)
         if not cont:
-            print(f">*Ubiq*<找不到 prompt '{prompt_text}' 的 container")
+            print(f">*Ubiq*<Cannot find container for prompt '{prompt_text}'")
             return False
 
         btn = cont.find_element(By.CSS_SELECTOR, "button.muteButton")
@@ -278,25 +292,27 @@ def ensure_mute_state(prompt_text: str, target_mute: bool, max_retry=3, wait_sec
         for attempt in range(max_retry):
             cur_state = _is_button_pressed(btn)
             if cur_state == target_mute:
-                print(f">*Ubiq*<'{prompt_text}' 已是 mute={target_mute} (尝试 {attempt})")
+                print(f">*Ubiq*<'{prompt_text}' is already mute={target_mute} (Attempt {attempt})")
                 return True
 
-            # 状态未知或不符 → 点击一次再等
+            # If state is not the target, click and wait.
             driver.execute_script("arguments[0].click();", btn)
             time.sleep(wait_sec)
 
-        # 尝试多次后仍未达到
         final_state = _is_button_pressed(btn)
         print(f">*Ubiq*<cannot '{prompt_text}' set mute={target_mute}，final state={final_state}")
         return False
 
     except Exception as e:
-        print(f">*Ubiq*<点击 muteButton 失败: {e}")
+        print(f">*Ubiq*<Error clicking muteButton: {e}")
         return False
 
 
 
 def listen_from_node():
+    """
+    Listens for JSON commands from stdin (from Node.js) and adds actions to queues.
+    """
     for raw in sys.stdin:
         print(f"[DEBUG] raw repr: {raw!r}")
         line = raw.lstrip('\ufeff').strip()
@@ -306,7 +322,7 @@ def listen_from_node():
             msg = json.loads(line)
             mtype = msg.get("type")
 
-            # ----- 删除指定 prompt -----------------------------------------
+            # Handle "DeletePrompt" command.
             if mtype == "DeletePrompt":
                 keyword = msg.get("prompt", "").strip()
                 if keyword:
@@ -315,29 +331,30 @@ def listen_from_node():
                     print(f">*Ubiq*<Queued delete for prompt: {keyword}")
                     debug(f">*Ubiq*<Queued delete for prompt: {keyword}")
 
-            # ----- 调整指定 prompt 的音量 ----------------------------------
+            # Handle "SetPromptVolume" command.
             elif mtype == "SetPromptVolume":
                 prompt  = msg.get("prompt", "").strip()
-                volume  = msg.get("volume")          # 0~100 的整数
+                volume  = msg.get("volume")          # Integer 0~100 
                 if prompt and volume is not None:
                     with volume_lock:
                         volume_queue.append((prompt, volume))
-                    print(f">*Ubiq*<Queued volume {volume} for '{prompt}'")
                     debug(f">*Ubiq*<Queued volume {volume} for '{prompt}'")
 
+            # Handle "Mute" command for a specific prompt.
             elif mtype == "Mute":
                 prompt = msg.get("prompt", "").strip()
-                target = bool(msg.get("mute"))  # true=静音
+                target = bool(msg.get("mute"))  # true=mute
                 if prompt:
                     ensure_mute_state(prompt, target)
 
+            # Handle global settings like density, brightness, chaos.
             elif mtype in ("density", "brightness", "chaos"):
                 level = (msg.get("level") or
                         msg.get("density") or  
                         "").strip().lower()     # "auto" / "low" / "high"
 
                 if not level:
-                    print(f">*Ubiq*<⚠️ {mtype} 缺少 level")
+                    print(f">*Ubiq*< Missing level for {mtype}")
                     continue
 
                 if mtype == "density":
@@ -346,18 +363,20 @@ def listen_from_node():
                     ensure_brightness(level)
                 else:                            # SetChaos
                     ensure_chaos(level)
-
-                debug(f">*Ubiq*<执行 {mtype} → {level}")
+                debug(f">*Ubiq*<Executed {mtype} -> {level}")
             
+            # Handle BPM change.
             elif mtype == "bpm":
                 ensure_bpm(msg.get("value", "auto"))
             
+            # Handle track muting (drums, bass, other).
             elif mtype == "TrackMute":
                 track = msg.get("track", "").strip().lower()   # drums / bass / other
-                target = bool(msg.get("mute"))                 # True=静音
+                target = bool(msg.get("mute"))                 # True=mute
                 if track in ("drums", "bass", "other"):
                     ensure_track_mute(track, target)
             
+            # Handle musical key change.
             elif mtype == "key":
                 val = (msg.get("value") or "").strip()
                 if val:
@@ -368,13 +387,14 @@ def listen_from_node():
 
             
 def get_prompt_text(container):
+    """Helper to extract prompt text from a container element."""
     try:
         return container.find_element(By.CSS_SELECTOR, "div.kWfOUR").text.strip()
     except Exception:
-        # 兜底：找没有子元素、只有文本的 div
         return container.find_element(By.XPATH, ".//div[not(*) and normalize-space()]").text.strip()
 
 def norm_vol(v):
+    """Helper to normalize a volume value to a 0-100 integer."""
     if isinstance(v, str):
         v = v.strip().rstrip('%')
     try:
@@ -386,6 +406,7 @@ def norm_vol(v):
     return max(0, min(100, int(round(f))))
 
 def _find_container_by_prompt(prompt_text: str):
+    """Finds a prompt's container element by its text content."""
     target = prompt_text.strip()
     containers = driver.find_elements(By.CSS_SELECTOR, "div.trackContainer")
     for c in containers:
@@ -400,61 +421,10 @@ def _find_container_by_prompt(prompt_text: str):
             return c
     return None
 
-def slide_prompt_volume(prompt, percent):
-    """
-    通过拖动滑块设置指定 prompt 的音量（0~100 / 0~1 都支持）
-    """
-    vol = norm_vol(percent)
-    if vol is None:
-        print(f">*Ubiq*<非法音量: {percent}")
-        return False
-
-    try:
-        # 1. 找到这个 prompt 的 container
-        container = _find_container_by_prompt(prompt)
-        if not container:
-            print(f">*Ubiq*<没找到 '{prompt}' 的 container")
-            return False
-
-        # 2. 找滑轨 & slider & thumb
-        track  = container.find_element(By.XPATH, ".//span[@data-orientation='horizontal' and @aria-disabled='false']")
-        slider = container.find_element(By.XPATH, ".//span[@role='slider' and @aria-valuenow]")
-        thumb  = container.find_element(By.XPATH, ".//span[contains(@style,'--radix-slider-thumb-transform')]")
-
-        # 3. 计算当前位置与目标位置（像素）
-        cur = norm_vol(slider.get_attribute("aria-valuenow"))
-        mn  = norm_vol(slider.get_attribute("aria-valuemin") or 0)
-        mx  = norm_vol(slider.get_attribute("aria-valuemax") or 100)
-        print("min", mn, "max", mx)
-
-        rect_track = track.rect
-        width = rect_track['width']
-        # 起点 & 终点（相对 track 左侧的像素）
-        start_px  = (cur - mn) / (mx - mn) * width
-        target_px = (vol - mn) / (mx - mn) * width
-        delta_x   = target_px - start_px
-        if abs(delta_x) < 1:
-            print(f">*Ubiq*<'{prompt}' 已经是 {vol}%")
-            return True
-
-        # 4. 用 ActionChains 拖动
-        actions = ActionChains(driver)
-        # 先把鼠标移动到 track 左上角偏移 start_px 的位置
-        actions.move_to_element_with_offset(track, start_px, rect_track['height']/2)
-        actions.click_and_hold()
-        actions.move_by_offset(delta_x, 0)
-        actions.release()
-        actions.perform()
-
-        # 校验
-        new_val = slider.get_attribute("aria-valuenow")
-        print(f">*Ubiq*<为 '{prompt}' 滑动到 {new_val}% (目标 {vol}%)")
-        return True
-    except Exception as e:
-        print(f">*Ubiq*<滑动 '{prompt}' 失败: {e}")
-        return False
-    
 def print_all_prompt_volumes():
+    """
+    Executes JS to get the text and volume values of all prompts and prints them.
+    """
     js = """
     return [...document.querySelectorAll('span[role="slider"][aria-valuenow]')].map(sl=>{
       const cont = sl.closest('div.trackContainer');
@@ -479,10 +449,8 @@ def print_all_prompt_volumes():
 
 def set_prompt_volume_percent(prompt: str, percent):
     """
-    percent: 0~100 的百分比（整数/浮点/字符串都行）
-             0  -> min (比如 0)
-             100-> max (比如 2)
-             25 -> 映射到 0~2 范围的 0.5
+    Sets a prompt's volume by injecting JavaScript to call the underlying React handler.
+    This is more reliable than simulating a drag-and-drop.
     """
     # 先在 Python 端 clamp，避免 NaN
     try:
@@ -494,7 +462,7 @@ def set_prompt_volume_percent(prompt: str, percent):
 
     js = r"""
     return (function(name, pct){
-      // 1. 找到包含该 prompt 的 trackContainer
+      // Find the trackContainer for the given prompt name.
       const containers = [...document.querySelectorAll('div.trackContainer')];
       const cont = containers.find(c=>{
         const t = c.querySelector('div.kWfOUR') || c.querySelector("div:not(:has(*))");
@@ -502,16 +470,16 @@ def set_prompt_volume_percent(prompt: str, percent):
       });
       if(!cont) return 'notfound';
 
-      // 2. 找 slider 元素
+      // Find the slider element.
       const sliderEl = cont.querySelector('span[role="slider"][aria-valuenow]');
       if(!sliderEl) return 'no slider';
 
-      // 3. 读 min/max按百分比换算真实值
+      // Read min/max values and calculate the real value from the percentage.
       const vmin = parseFloat(sliderEl.getAttribute('aria-valuemin') || '0');
       const vmax = parseFloat(sliderEl.getAttribute('aria-valuemax')  || '100');
       const realVal = vmin + (vmax - vmin) * (pct/100);
 
-      // 4. React Fiber 寻找 onValueChange
+      // Find the React Fiber instance to access its props.
       const key = Object.keys(sliderEl).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactProps$'));
       if(!key) return 'no fiber key';
       let fiber = sliderEl[key];
@@ -523,7 +491,7 @@ def set_prompt_volume_percent(prompt: str, percent):
       }
       if(!handler) return 'no handler';
 
-      // 5. 调用 handler 设置
+      // Call the onValueChange handler with the new value.
       handler([realVal]);
 
       return {match: name, min:vmin, max:vmax, setPercent:pct, setReal:realVal};
@@ -534,19 +502,18 @@ def set_prompt_volume_percent(prompt: str, percent):
     debug(f">*Ubiq*<set_prompt_volume_percent('{prompt}', {pct}) -> {result}")
     return result
 
-# ---------- 通用内部工具 ---------- #
+# ---------- Generic UI control helpers ---------- #
 def _find_button(prefix: str, level: str):
     """
-    优先按 id 查找  <button id="density_auto">…
-    如果前端改了 id，再退而按 data-motion or label 文本模糊匹配
+    Finds a button using multiple strategies: by ID, by data-motion attribute, or by relative position.
     """
-    # 1) id 方式（最快最稳）
+    # find ID
     try:
         return driver.find_element(By.ID, f"{prefix}_{level}")
     except Exception:
         pass
 
-    # 2) 按 data-motion 属性（Google MusicFX 页面会带 data-motion-pop-id）
+    # 2) data-motion attribute（Google MusicFX has data-motion-pop-id）
     try:
         return driver.find_element(
             By.CSS_SELECTOR,
@@ -555,18 +522,16 @@ def _find_button(prefix: str, level: str):
     except Exception:
         pass
 
-    # 3) 最后兜底：在同容器(label)下通过顺序查找
+    # by relative position
     try:
         label_texts = {
             "density": ("density", "密度"),
             "brightness": ("brightness", "亮度"),
-            "chaos": ("chaos", "混乱", "随机")   # 可能翻译不同
+            "chaos": ("chaos", "混乱", "随机")   # different languages
         }
         label_words = label_texts.get(prefix, ())
-        # 找到写着“密度/亮度/混乱”等字样的 label，然后在同级下拿 button 列表
         for word in label_words:
             lab = driver.find_element(By.XPATH, f"//label[contains(text(), '{word}')]")
-            # 同一个父节点里第 1 / 2 / 3 个按钮即 auto/low/high
             btns = lab.find_elements(By.XPATH, ".//preceding::button")[-3:]
             idx  = {"auto":0, "low":1, "high":2}[level]
             return btns[idx]
@@ -576,6 +541,7 @@ def _find_button(prefix: str, level: str):
 
 
 def _is_selected(button):
+    """Helper to check if a button is in a selected/active state."""
     aria = button.get_attribute("aria-pressed")
     if aria:
         return aria.lower() == "true"
@@ -584,24 +550,24 @@ def _is_selected(button):
 
 
 def _ensure(prefix: str, level: str, retry=3, wait=0.15):
+    """Generic function to ensure a setting (like density) is at the desired level."""
     level = level.lower().strip()
     if level not in ("auto", "low", "high"):
-        debug(f">*Ubiq*<非法 level '{level}' for {prefix}")
+        debug(f">*Ubiq*<Invalid level '{level}' for {prefix}")
         return False
 
     btn = _find_button(prefix, level)
     if not btn:
-        debug(f">*Ubiq*<找不到按钮 {prefix}_{level}")
+        debug(f">*Ubiq*<Button not found: {prefix}_{level}")
         return False
 
     for _ in range(retry):
         if _is_selected(btn):
-            debug(f">*Ubiq*<{prefix} 已是 {level}")
+            debug(f">*Ubiq*<{prefix} is already {level}")
             return True
         driver.execute_script("arguments[0].click();", btn)
         time.sleep(wait)
-
-    debug(f">*Ubiq*<无法把 {prefix} 切到 {level}")
+    debug(f">*Ubiq*<Failed to switch {prefix} to {level}")
     return False
 
 def ensure_density(level: str, max_retry=3, wait_sec=0.15):
@@ -611,32 +577,23 @@ def ensure_brightness(level: str, max_retry=3, wait_sec=0.15):
     return _ensure("brightness", level, max_retry, wait_sec)
 
 def ensure_chaos(level: str, max_retry=3, wait_sec=0.15):
-    # “混乱 / 随机度” 我用 chaos 前缀；若前端实际 id 用 randomness，自行改成 randomness
     return _ensure("chaos", level, max_retry, wait_sec)
 
-# 60–180 BPM 约束
-# === 60–180 BPM =========================================================
+# 60–180 BPM constrains
 BPM_MIN = 60
 BPM_MAX = 180
 
-# —— 1. 找顶部 BPM 按钮 ——————————————————————————————
+
 def _find_bpm_button():
-    """
-    返回「顶部 BPM 按钮」的 WebElement  
-    • 先找 aria-haspopup="dialog" 且内部有 <small>BPM</small>  
-    • 再兜底按文字 “BPM” 匹配
-    """
+    """Finds the main BPM button on the page."""
     XPATH_BTN = (
-        # ① 你的截图：<button aria-haspopup="dialog"> <small>BPM</small> <p>102</p> …
         "//button[@aria-haspopup='dialog' and .//small[normalize-space()='BPM']]"
-        # ② 若上面失败，再模糊找含 BPM 的按钮
         " | //button[contains(.,'BPM')]"
     )
     return driver.find_element(By.XPATH, XPATH_BTN)
 
-from selenium.common.exceptions import TimeoutException
-
 def _wait_bpm_panel(btn, timeout=5):
+    """Waits for the BPM control panel to become visible after clicking the button."""
     pid = btn.get_attribute("aria-controls")
     if not pid:
         raise TimeoutException("BPM button missing aria-controls")
@@ -645,13 +602,13 @@ def _wait_bpm_panel(btn, timeout=5):
     )
     track = panel.find_element(By.CSS_SELECTOR,
                                "span[data-orientation='horizontal']")
-    return panel, track  # track 里第一个 <span> 就是 thumb
+    return panel, track
 
 
 def ensure_bpm(value):
+    """Opens the BPM panel and sets the BPM to the specified value."""
     debug(f"[BPM] enter ensure_bpm({value})")
-
-    # ① 打开面板
+    # open panel
     try:
         top_btn = _find_bpm_button()
         driver.execute_script("arguments[0].click();", top_btn)
@@ -679,7 +636,7 @@ def ensure_bpm(value):
 
     bpm = max(60, min(180, int(round(float(value)))))
 
-    # ② 用 JS 改 thumb transform + aria-valuenow
+    # Use JS to set the slider's value directly.
     js = """
       const bpm   = arguments[0];
       const track = arguments[1];
@@ -698,7 +655,7 @@ def ensure_bpm(value):
     driver.execute_script(js, bpm, track)
     debug(f"[BPM] set to {bpm} via JS")
 
-    # ③ 点应用
+    # click apply
     try:
         panel.find_element(By.XPATH,
             ".//button[normalize-space()='应用' or normalize-space()='Apply']"
@@ -709,14 +666,7 @@ def ensure_bpm(value):
 
 
 def _find_key_button(timeout=3):
-    """
-    在没有 <small> 文本的情况下，按结构锁定 Key 按钮：
-    1) 直接找含“键/Key/maj/min”的按钮（有些版本有文本）
-    2) 找到 BPM 按钮后，取它的“同一行的另一个” aria-haspopup=dialog 按钮
-    3) 最后兜底：BPM 后第一个 following 的 dialog 按钮
-    返回可点击的 WebElement 或 None
-    """
-    # ① 直接根据文本命中（如果有）
+    """Finds the main musical key button using several strategies."""
     XPATHS = [
         "//button[@aria-haspopup='dialog' and contains(normalize-space(.),'键')]",
         "//button[@aria-haspopup='dialog' and contains(normalize-space(.),'Key')]",
@@ -731,25 +681,25 @@ def _find_key_button(timeout=3):
         except Exception:
             pass
 
-    # ② 与 BPM 同一行（同一父级）另外一个 dialog 按钮
+    # Another dialog button on the same line (same parent) as BPM
     try:
         bpm = WebDriverWait(driver, 3).until(
             EC.presence_of_element_located(
                 (By.XPATH, "//button[@aria-haspopup='dialog' and .//small[normalize-space()='BPM']]")
             )
         )
-        # 升到最近一层容器再找兄弟按钮（你截图里两者同一层）
+        # Go to the nearest container and find the brother button
         row = bpm.find_element(By.XPATH, "./..")
         siblings = [b for b in row.find_elements(By.XPATH, ".//button[@aria-haspopup='dialog']") if b.is_displayed()]
         if len(siblings) >= 2:
-            # 过滤掉 BPM 本人，拿另一个
+            # Filter out BPM itself and take another
             for b in siblings:
                 if "BPM" not in (b.text or ""):
                     return b
     except Exception:
         pass
 
-    # ③ 兜底：BPM 之后的第一个 dialog 按钮
+    # Backup: The first dialog button after BPM
     try:
         sib = driver.find_element(By.XPATH, "//button[@aria-haspopup='dialog' and .//small[normalize-space()='BPM']]/following::button[@aria-haspopup='dialog'][1]")
         if sib.is_displayed():
@@ -760,17 +710,14 @@ def _find_key_button(timeout=3):
     return None
 
 def _wait_key_panel(btn, timeout=5):
-    """
-    完全照搬 BPM：有 aria-controls 就按 ID 等待；
-    没有就退回找最近出现的可见 listbox/dialog 弹层。
-    """
+    """Waits for the key selection panel to become visible."""
     pid = btn.get_attribute("aria-controls")
     if pid:
         return WebDriverWait(driver, timeout).until(
             EC.visibility_of_element_located((By.ID, pid))
         )
 
-    # 兜底：找一个可见的 listbox/dialog（Radix 常用）
+    # Fallback: Find a visible listbox/dialog (commonly used by Radix)
     return WebDriverWait(driver, timeout).until(
         EC.visibility_of_element_located((
             By.XPATH,
@@ -780,16 +727,13 @@ def _wait_key_panel(btn, timeout=5):
 
 
 def ensure_key(value: str):
-    """
-    打开 Key 面板 -> 点开内部 combobox -> 在 listbox 里选择目标项 -> 如有“应用/Apply”则点击。
-    value 例：'C maj / A min' 或 'Auto'/'自动'
-    """
+    """Opens the key panel and selects the specified key."""
     label = (value or "").strip()
     debug(f"[KEY] enter ensure_key({label})")
     if not label:
         return False
 
-    # 1) 打开顶部 Key 按钮
+    # Open the top Key button
     try:
         key_btn = _find_key_button(timeout=5)
         driver.execute_script("arguments[0].scrollIntoView({block:'center'});", key_btn)
@@ -798,7 +742,7 @@ def ensure_key(value: str):
         debug(f"[KEY] click key button failed: {e}")
         return False
 
-    # 2) 等外层 dialog 可见
+    # Wait for the outer dialog to be visible
     try:
         panel = _wait_key_panel(key_btn, timeout=6)
         if not panel:
@@ -808,7 +752,7 @@ def ensure_key(value: str):
         debug("[KEY] panel timeout")
         return False
 
-    # “Auto/自动”直接走重置按钮
+    # "Auto/Automatic" directly goes to the reset button
     if label.lower() in ("auto", "自动"):
         try:
             try:
@@ -820,16 +764,15 @@ def ensure_key(value: str):
             return True
         except Exception as e:
             debug(f"[KEY] reset->apply failed: {e}")
-            # 继续往下也无意义
             return False
 
-    # 3) 在 dialog 里找到 combobox，点开以渲染真正的 listbox
+    # Find the combobox in the dialog and click it to render the actual listbox
     try:
         combo = panel.find_element(By.XPATH, ".//button[@role='combobox' and @aria-controls]")
         lb_id = combo.get_attribute("aria-controls")
         driver.execute_script("arguments[0].click();", combo)
 
-        # 等 listbox 出现（注意 listbox 可能挂在 body 下的 Portal）
+        # Wait for the listbox to appear
         listbox = WebDriverWait(driver, 6).until(
             EC.visibility_of_element_located((By.ID, lb_id))
         )
@@ -837,7 +780,7 @@ def ensure_key(value: str):
         debug(f"[KEY] open combobox/listbox failed: {e}")
         return False
 
-    # 4) 在 listbox 中选择目标项
+    # Select the target item in the listbox
     normA = label
     normB = label.replace(" / ", "/")
     try:
@@ -854,7 +797,7 @@ def ensure_key(value: str):
         driver.execute_script("arguments[0].scrollIntoView({block:'center'});", opt)
         driver.execute_script("arguments[0].click();", opt)
     except Exception:
-        # JS 兜底（限定在当前 listbox 内）
+        # JS fallback (limited to the current listbox)
         js_pick = r"""
           const root = arguments[0];
           const label = String(arguments[1]||'').trim();
@@ -873,7 +816,7 @@ def ensure_key(value: str):
         if res != "ok":
             return False
 
-    # 5) 点“应用/Apply”（如果存在）
+    # Click "Apply" (if available)
     try:
         apply_btn = panel.find_element(By.XPATH, ".//button[normalize-space()='应用' or normalize-space()='Apply']")
         driver.execute_script("arguments[0].click();", apply_btn)
@@ -890,10 +833,7 @@ _TRACK_ID_MAP = {
 }
 
 def _find_track_button(track: str):
-    """
-    根据 track 名 ("drums" / "bass" / "other") 找到对应按钮 <button id="drum-control">…
-    若前端改动了 id，可在 _TRACK_ID_MAP 中自行调整。
-    """
+    """Finds the mute button for a specific track (drums, bass, other)."""
     track = track.lower().strip()
     btn_id = _TRACK_ID_MAP.get(track)
     if not btn_id:
@@ -904,11 +844,7 @@ def _find_track_button(track: str):
         return None
 
 def _is_btn_muted(btn) -> bool|None:
-    """
-    读取按钮当前是否为『静音』。
-    先看 aria-pressed，再兜底看 class。
-    返回 True=静音，False=未静音，None=无法判断。
-    """
+    """Checks if a track button is currently in the muted state."""
     aria = btn.get_attribute("aria-pressed")
     if aria is not None:
         return aria.lower() == "true"
@@ -922,33 +858,25 @@ def _is_btn_muted(btn) -> bool|None:
 
 def ensure_track_mute(track: str, target_mute: bool,
                       retry:int = 3, wait:float = 0.15) -> bool:
-    """
-    反复点击按钮直至 Drums/Bass/Other 达到目标静音状态。
-
-    track       : "drums" | "bass" | "other"
-    target_mute : True → 静音, False → 取消静音
-    """
+    """Ensures a track is in the target mute state."""
     btn = _find_track_button(track)
     if not btn:
-        debug(f">*Ubiq*<找不到 track 按钮: {track}")
+        debug(f">*Ubiq*<Track button not found: {track}")
         return False
 
     for _ in range(retry):
         cur = _is_btn_muted(btn)
         if cur == target_mute:
-            debug(f">*Ubiq*<{track} 已是 mute={target_mute}")
+            debug(f">*Ubiq*<{track} is already mute={target_mute}")
             return True
         driver.execute_script("arguments[0].click();", btn)
         time.sleep(wait)
 
-    debug(f">*Ubiq*<无法将 {track} 置为 mute={target_mute}")
+    debug(f">*Ubiq*<Failed to set {track} to mute={target_mute}")
     return False
 
-from selenium.common.exceptions import TimeoutException
-
+# ---------- Page Clear Helpers ---------- #
 _cleared_once = False
-
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 _cleared_once = False
 
@@ -957,24 +885,22 @@ _cleared_once = False
 def _count_prompts_js():
     return """
       return (function(){
-        // 统计页面上当前的 prompt 条目数
+        // JS to count the number of prompt containers on the page.
         const nodes = document.querySelectorAll('div.trackContainer');
         return nodes ? nodes.length : 0;
       })();
     """
 
 def _install_auto_clear_observer():
+    """Injects a MutationObserver to automatically click the 'Clear All' button."""
     js = r"""
     (function(){
-      // 已装过就别重复
       if(window.__autoClearInstalled) return 'installed';
       window.__autoClearInstalled = true;
-
-      // 控制定时：允许自动清空的开关（默认开）
       window.__autoClearing = true;
 
       const tryClick = ()=>{
-        if(!window.__autoClearing) return false; // 关掉后不再点
+        if(!window.__autoClearing) return false; 
         const btn = document.getElementById('clearAllPrompts') 
                  || document.querySelector('button#clearAllPrompts, button[id*="clear"][id*="prompt"]');
         if(btn){
@@ -987,13 +913,13 @@ def _install_auto_clear_observer():
         return false;
       };
 
-      // 立刻试几次（只在开启状态下才会触发）
+      // Try several times immediately (only triggered when in the enabled state)
       setTimeout(tryClick,   0);
       setTimeout(tryClick, 300);
       setTimeout(tryClick, 800);
       setTimeout(tryClick,1500);
 
-      // 监听 DOM 变化；只在开关打开时动作
+      // Listen for DOM changes; only act when the switch is on
       const obs = new MutationObserver(()=>tryClick());
       obs.observe(document.documentElement,{childList:true,subtree:true});
       window.__autoClearObs = obs;
@@ -1005,13 +931,7 @@ def _install_auto_clear_observer():
     debug(f"[ClearAll] inject observer -> {res}")
 
 def wait_page_ready_and_clear(timeout=40, verify_timeout=8.0):
-    """
-    更稳的清空流程：
-    1) 等文档就绪
-    2) 清 localStorage/sessionStorage（当前域名下）
-    3) 注入 MutationObserver 自动清空
-    4) 多次重试点击，直到 trackContainer 数量为 0 或超时
-    """
+    """Robustly clears all prompts from the page on startup."""
     global _cleared_once, driver
     if _cleared_once:
         return
@@ -1020,23 +940,23 @@ def wait_page_ready_and_clear(timeout=40, verify_timeout=8.0):
     debug("[ClearAll] >>> start")
 
     try:
-        # 1) DOM ready
+        # DOM ready
         WebDriverWait(driver, timeout).until(
             lambda d: d.execute_script("return document.readyState") == "complete"
         )
         debug("[ClearAll] document.readyState=complete")
 
-        # 2) 清 storage（防止页面水合后又恢复历史）
+        # clean storage
         try:
             driver.execute_script("try{ localStorage.clear(); sessionStorage.clear(); }catch(e){}")
             debug("[ClearAll] storage cleared")
         except Exception as e:
             debug(f"[ClearAll] storage clear error: {e}")
 
-        # 3) 注入自动清空观察器
+        # Inject automatic emptying observer
         _install_auto_clear_observer()
 
-        # 4) 主动点一次 + 验证循环
+        # Active click once + verification cycle
         def _try_click_once():
             js_click = r"""
             const btn = document.getElementById('clearAllPrompts')
@@ -1050,11 +970,11 @@ def wait_page_ready_and_clear(timeout=40, verify_timeout=8.0):
             """
             return driver.execute_script(js_click)
 
-        # 先努点一下
+        # try click
         res = _try_click_once()
         debug(f"[ClearAll] first click -> {res}")
 
-        # 验证：等待 trackContainer 变为 0，并在一段时间内保持 0
+        # Verification: Wait for trackContainer to become 0 and remain 0 for a period of time
         end_at = time.time() + verify_timeout
         last_n = None
         stable_zero_time = None
@@ -1065,13 +985,13 @@ def wait_page_ready_and_clear(timeout=40, verify_timeout=8.0):
                 debug(f"[ClearAll] prompts={n}")
                 last_n = n
 
-            # 验证循环里，当确认稳定为 0 时：
+            # In the verification loop, when it is confirmed to be stable at 0:
             if n == 0:
                 if stable_zero_time is None:
                     stable_zero_time = time.time()
                 if time.time() - stable_zero_time >= 0.6:
                     debug("[ClearAll] confirmed 0 and stable")
-                    # ★ 关键：清一次就关（断开并关掉开关）
+                    # Clear once and then turn off (disconnect and turn off the switch)
                     try:
                         driver.execute_script("""
                         if(window.__autoClearObs){ window.__autoClearObs.disconnect(); }
@@ -1084,7 +1004,7 @@ def wait_page_ready_and_clear(timeout=40, verify_timeout=8.0):
                     return
             else:
                 stable_zero_time = None
-                # 再试点一次
+                # try click again
                 _try_click_once()
             time.sleep(0.2)
 
@@ -1094,7 +1014,6 @@ def wait_page_ready_and_clear(timeout=40, verify_timeout=8.0):
         debug(f"[ClearAll] error: {e}")
     finally:
         debug(f"[ClearAll] <<< done in {time.time()-t0:.2f}s")
-# ────────────────────────────────────────────
 
 
 if __name__ == "__main__":

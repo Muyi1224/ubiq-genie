@@ -2,34 +2,47 @@ using UnityEngine;
 using UnityEngine.XR.Interaction.Toolkit;
 using UnityEngine.XR.Interaction.Toolkit.Interactors;
 
+/// <summary>
+/// A singleton manager for handling object selection in VR via raycasting.
+/// It provides visual feedback (outline, marker) and allows material changes on the selected object.
+/// </summary>
 public class VRSelectionManager : MonoBehaviour
 {
+    // Singleton instance for easy global access.
     public static VRSelectionManager Instance { get; private set; }
 
     [Header("Ray source (pick ONE)")]
+    // The XR Ray Interactor from the XR Interaction Toolkit.
     public XRRayInteractor rightRay;
+    // A fallback transform to use for raycasting if the XRRayInteractor is not assigned.
     public Transform rightAim;
 
     [Header("Ray settings (for rightAim fallback)")]
     public float rayLength = 25f;
-    public LayerMask layers = ~0;
+    public LayerMask layers = ~0; // Raycast against all layers by default.
 
     [Header("Selection visuals")]
+    // Note: These properties are declared but not used in the current code.
     public Color highlightColor = new Color(0f, 1f, 1f, 0.75f);
     public bool usePropertyBlock = true;
+    // A prefab to instantiate as a visual marker above the selected object.
     public GameObject selectionMarkerPrefab;
 
     [Header("Emission tweak")]
+    // Note: These properties are declared but not used in the current code.
     [Min(0f)] public float emissionIntensity = 3f;
     static readonly int EmissionColorId = Shader.PropertyToID("_EmissionColor");
     static readonly int EmissiveColorHDRPId = Shader.PropertyToID("_EmissiveColor");
 
-    Renderer _current;
-    GameObject _marker;
-    MaterialPropertyBlock _mpb;
+    // internal state
+    Renderer _current; // The primary renderer of the currently selected object.
+    GameObject _marker; // The instantiated selection marker object.
+    MaterialPropertyBlock _mpb; // For performance, if changing material properties without creating new instances.
 
     [Header("Outline")]
+    // The material used to draw the selection outline.
     public Material outlineMaterial;
+    // If true, the outline will be applied to the selected object and all its children.
     public bool outlineAffectChildren = true;
 
     readonly System.Collections.Generic.Dictionary<Renderer, Material[]> _originalMats
@@ -47,7 +60,7 @@ public class VRSelectionManager : MonoBehaviour
         _mpb = new MaterialPropertyBlock();
     }
 
-    // —— 供“选中键”调用
+    // Called by an input action (e.g., a button press) to select the object under the ray.
     public void SelectUnderRay()
     {
         if (TryGetHit(out var hit))
@@ -56,12 +69,15 @@ public class VRSelectionManager : MonoBehaviour
             ClearSelection();
     }
 
+    // Clears the current selection and removes any highlighting.
     public void ClearSelection() => SetCurrent(null);
 
+    // Applies a new material to the currently selected object and its children.
     public void ApplyMaterialToSelection(Material mat)
     {
         if (!_current || !mat) return;
 
+        // Determine the target renderers (either just the selected one or its children too).
         var targets = outlineAffectChildren
             ? _current.GetComponentsInChildren<Renderer>()
             : new Renderer[] { _current };
@@ -70,14 +86,15 @@ public class VRSelectionManager : MonoBehaviour
         {
             if (!r) continue;
 
-            // 取缓存（不带描边）
+            // Get the base materials (without the outline).
             Material[] baseMats;
             if (_originalMats.TryGetValue(r, out var cached))
             {
-                baseMats = (Material[])cached.Clone();
+                baseMats = (Material[])cached.Clone(); // Use the cached original materials
             }
             else
             {
+                // If not cached, get the current shared materials and strip the outline if present.
                 var mats = r.sharedMaterials;
                 bool hasOutline = outlineMaterial && mats.Length > 0 && mats[mats.Length - 1] == outlineMaterial;
                 int len = hasOutline ? mats.Length - 1 : mats.Length;
@@ -86,14 +103,14 @@ public class VRSelectionManager : MonoBehaviour
                 for (int i = 0; i < len; i++) baseMats[i] = mats[i];
             }
 
-            // 替换材质
+            // replace texture
             for (int i = 0; i < baseMats.Length; i++)
                 baseMats[i] = mat;
 
-            // 缓存「不带描边」版本
+            // Cache the new set of materials (without the outline).
             _originalMats[r] = baseMats;
 
-            // 如果当前在高亮 -> 加回描边
+            // If the object is currently highlighted, re-apply the materials with the outline.
             if (_activeGroup.Contains(r))
             {
                 var matsWithOutline = new Material[baseMats.Length + 1];
@@ -111,8 +128,7 @@ public class VRSelectionManager : MonoBehaviour
         }
     }
 
-    // ---------- 内部 ----------
-
+    // Tries to get a raycast hit from the primary XR Ray or the fallback transform.
     bool TryGetHit(out RaycastHit hit)
     {
         if (rightRay && rightRay.TryGetCurrent3DRaycastHit(out hit))
@@ -124,17 +140,19 @@ public class VRSelectionManager : MonoBehaviour
         return Physics.Raycast(t.position, t.forward, out hit, rayLength, layers, QueryTriggerInteraction.Ignore);
     }
 
+
+    // Sets the currently selected renderer, handling the un-highlighting of the old and highlighting of the new.
     void SetCurrent(Renderer r)
     {
         if (_current == r) return;
 
-        // 先还原上一个对象的所有 Renderer（倒序，跳过已销毁）
+        // First, unhighlight all renderers in the previously active group
         if (_activeGroup.Count > 0)
         {
             for (int i = _activeGroup.Count - 1; i >= 0; i--)
             {
                 var rr = _activeGroup[i];
-                if (!rr) { _activeGroup.RemoveAt(i); continue; } // 已销毁
+                if (!rr) { _activeGroup.RemoveAt(i); continue; } // Handle destroyed objects.
                 Unhighlight(rr);
                 _activeGroup.RemoveAt(i);
             }
@@ -144,6 +162,7 @@ public class VRSelectionManager : MonoBehaviour
 
         if (_current)
         {
+            // If a new object is selected, highlight it (and its children if applicable).
             var targets = outlineAffectChildren
                 ? _current.GetComponentsInChildren<Renderer>()
                 : new Renderer[] { _current };
@@ -154,11 +173,11 @@ public class VRSelectionManager : MonoBehaviour
                 Highlight(rr);
                 _activeGroup.Add(rr);
             }
-            EnsureMarker(_current);
+            EnsureMarker(_current);  // Show the selection marker.
         }
         else if (_marker)
         {
-            _marker.SetActive(false);
+            _marker.SetActive(false); // Hide the marker if nothing is selected
         }
     }
 
@@ -167,25 +186,24 @@ public class VRSelectionManager : MonoBehaviour
         if (!outlineMaterial) { Debug.LogWarning("[VRSelectionManager] 请在 Inspector 拖入 outlineMaterial"); return; }
 
         if (!_originalMats.ContainsKey(r))
-            _originalMats[r] = r.sharedMaterials; // 记录原材质
+            _originalMats[r] = r.sharedMaterials; // store original texture
 
-        // 避免重复添加
+        // Avoid adding the outline material if it's already there
         var mats = r.sharedMaterials;
         for (int i = 0; i < mats.Length; i++)
             if (mats[i] == outlineMaterial) return;
 
+        // Create a new material array with the outline material appended.
         var newMats = new Material[mats.Length + 1];
         System.Array.Copy(mats, newMats, mats.Length);
         newMats[newMats.Length - 1] = outlineMaterial;
         r.sharedMaterials = newMats;
     }
 
-    // —— 取消选中时恢复原材质（容错版）
     void Unhighlight(Renderer r)
     {
         if (!r)
         {
-            // 已销毁，尝试清掉缓存条目
             _originalMats.Remove(r);
             return;
         }
@@ -197,7 +215,6 @@ public class VRSelectionManager : MonoBehaviour
             return;
         }
 
-        // 兜底：剔除描边材质
         var mats = r.sharedMaterials;
         int count = 0;
         for (int i = 0; i < mats.Length; i++)
@@ -230,9 +247,7 @@ public class VRSelectionManager : MonoBehaviour
         return _activeGroup != null && _activeGroup.Contains(r);
     }
 
-    /// <summary>
-    /// 如果当前选中包含 r，则清除选中（供删除前调用）
-    /// </summary>
+
     public void ClearIfContains(Renderer r)
     {
         if (!r) return;
@@ -280,15 +295,12 @@ public class VRSelectionManager : MonoBehaviour
         _marker.transform.rotation = Quaternion.identity;
     }
 
-    // —— 自检：若对象被外部销毁而未通知，这里做兜底清理
     void LateUpdate()
     {
         if (!_current && (_activeGroup.Count > 0 || _marker))
         {
             _activeGroup.Clear();
             _marker?.SetActive(false);
-
-            // 清理无效缓存项
             var dead = new System.Collections.Generic.List<Renderer>();
             foreach (var kv in _originalMats)
                 if (!kv.Key) dead.Add(kv.Key);
